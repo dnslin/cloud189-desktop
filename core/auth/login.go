@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -188,13 +189,30 @@ func (l *LoginClient) prepareLogin(ctx context.Context, loginURL string, params 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	q := resp.Request.URL.Query()
+
+	// 获取重定向后的 location（参考项目使用 resp.Request.Response.Header.Get("location")）
+	var referer string
+	if resp.Request.Response != nil {
+		referer = resp.Request.Response.Header.Get("Location")
+	}
+	if referer == "" {
+		referer = resp.Request.URL.String()
+	}
+
+	refURL, _ := url.Parse(referer)
+	var q url.Values
+	if refURL != nil {
+		q = refURL.Query()
+	} else {
+		q = resp.Request.URL.Query()
+	}
+
 	appKey := q.Get("appId")
 	if appKey == "" && params != nil {
 		appKey = params.Get("appId")
 	}
 	return &loginContext{
-		Referer: resp.Request.URL.String(),
+		Referer: referer,
 		AppKey:  appKey,
 		ReqID:   q.Get("reqId"),
 		Lt:      q.Get("lt"),
@@ -291,12 +309,22 @@ func (l *LoginClient) buildPwdRequest(ctx context.Context, loginCtx *loginContex
 func (l *LoginClient) exchangeSession(ctx context.Context, redirect string) (*Session, error) {
 	params := url.Values{}
 	params.Set("redirectURL", redirect)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.endpoints.SessionURL, strings.NewReader(params.Encode()))
+	// 添加必要的客户端参数（参考 cloud189-example/pkg/app/api.go sign 方法）
+	params.Set("clientType", "TELEPC")
+	params.Set("version", "7.1.8.0")
+	params.Set("channelId", "web_cloud.189.cn")
+	params.Set("rand", fmt.Sprintf("%d", l.now().UnixMilli()))
+
+	body := params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.endpoints.SessionURL, strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json;charset=UTF-8")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(body)), nil
+	}
 	var session Session
 	if err := l.client.Do(req, &session); err != nil {
 		return nil, err

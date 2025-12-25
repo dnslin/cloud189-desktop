@@ -203,7 +203,13 @@ func (c *Client) execute(req *http.Request, out any) (*http.Response, error) {
 		return resp, statusToErr(resp.StatusCode)
 	}
 
-	if decodeErr := json.NewDecoder(resp.Body).Decode(out); decodeErr != nil {
+	dec := json.NewDecoder(resp.Body)
+	dec.UseNumber() // 保留数字精度
+	if decodeErr := dec.Decode(out); decodeErr != nil {
+		if decodeErr == io.EOF {
+			// 空响应体，视为成功
+			return resp, nil
+		}
 		return resp, &DecodeError{Status: resp.StatusCode, Err: decodeErr}
 	}
 	if ok, okType := out.(OkRsp); okType && !ok.IsSuccess() {

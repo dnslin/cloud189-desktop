@@ -29,6 +29,13 @@ func (s *Session) GetSessionKey() string {
 	return s.SessionKey
 }
 
+// SetSessionKey 设置 SessionKey（Web 上传时动态获取）。
+func (s *Session) SetSessionKey(key string) {
+	if s != nil {
+		s.SessionKey = key
+	}
+}
+
 // GetSessionSecret 实现 SessionProvider。
 func (s *Session) GetSessionSecret() string {
 	if s == nil {

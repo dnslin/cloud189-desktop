@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -158,13 +159,9 @@ func (s *WebSigner) Sign(req *http.Request, params url.Values, rsaKey *WebRSA) e
 	requestDate := strconv.FormatInt(s.now().UnixMilli(), 10)
 	reqID := s.requestID()
 
-	signVals := url.Values{}
-	signVals.Set("SessionKey", sessionKey)
-	signVals.Set("Operate", strings.ToUpper(req.Method))
-	signVals.Set("RequestURI", req.URL.Path)
-	signVals.Set("Date", requestDate)
-	signVals.Set("params", hexParams)
-	signStr := encodeValues(signVals)
+	// 签名字符串必须按固定顺序拼接（与参考实现一致）
+	signStr := fmt.Sprintf("SessionKey=%s&Operate=%s&RequestURI=%s&Date=%s&params=%s",
+		sessionKey, strings.ToUpper(req.Method), req.URL.Path, requestDate, hexParams)
 	signature := crypto.Sign(signStr, secret)
 
 	pubKey := wrapRSAPubKey(rsaKey.PubKey)

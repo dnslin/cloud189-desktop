@@ -2,6 +2,7 @@ package cloud189
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,12 +13,31 @@ import (
 	"github.com/gowsp/cloud189-desktop/core/httpclient"
 )
 
+// FlexString 兼容字符串和数字的 JSON 字段。
+type FlexString string
+
+func (f *FlexString) UnmarshalJSON(data []byte) error {
+	// 尝试解析为字符串
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = FlexString(s)
+		return nil
+	}
+	// 尝试解析为数字
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = FlexString(n.String())
+		return nil
+	}
+	return nil
+}
+
 // CodeResponse 兼容 code/res_code 返回结构，实现业务错误检测。
 type CodeResponse struct {
-	CodeValue  string `json:"code,omitempty"`
-	Msg        string `json:"msg,omitempty"`
-	ResCode    string `json:"res_code,omitempty"`
-	ResMessage string `json:"res_message,omitempty"`
+	CodeValue  string     `json:"code,omitempty"`
+	Msg        string     `json:"msg,omitempty"`
+	ResCode    FlexString `json:"res_code,omitempty"`
+	ResMessage string     `json:"res_message,omitempty"`
 }
 
 // IsSuccess 判断业务码是否为成功。
@@ -27,7 +47,7 @@ func (r *CodeResponse) IsSuccess() bool {
 	}
 	code := r.CodeValue
 	if code == "" {
-		code = r.ResCode
+		code = string(r.ResCode)
 	}
 	if code == "" {
 		return true
@@ -49,7 +69,7 @@ func (r *CodeResponse) Code() string {
 	if r.CodeValue != "" {
 		return r.CodeValue
 	}
-	return r.ResCode
+	return string(r.ResCode)
 }
 
 // Message 返回服务端消息。
