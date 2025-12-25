@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  test:
+    cmds:
+      - go test ./...
+  vet:
+    cmds:
+      - go vet ./...
+  fmt:
+    cmds:
+      - gofmt -w .
+  lint:
+    cmds:
+      - golangci-lint run
+  check:
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
+      - ./scripts/check_frontend.sh

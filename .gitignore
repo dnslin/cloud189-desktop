@@ -1,0 +1,88 @@
+# ===== Go =====
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.out
+# Build outputs
+/bin/
+/dist/
+/build/
+/out/
+/tmp/
+/target/
+.cache
+.gocache
+# Go test / coverage
+*.test
+*.out
+coverage.*
+coverprofile
+*.prof
+
+# Go workspace / modules
+go.work
+go.work.sum
+
+# Vendor (if you use it)
+# /vendor/
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ===== Logs =====
+*.log
+
+# ===== OS / Misc =====
+.DS_Store
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# ===== Wails (optional) =====
+# Wails build artifacts (common patterns)
+app/build/
+app/dist/
+app/bin/
+wailsjs/
+*.syso
+
+# ===== Frontend (optional: if you have app/frontend) =====
+app/frontend/node_modules/
+app/frontend/dist/
+app/frontend/build/
+app/frontend/.next/
+app/frontend/.nuxt/
+app/frontend/.vite/
+app/frontend/.cache/
+app/frontend/.parcel-cache/
+app/frontend/.turbo/
+app/frontend/coverage/
+app/frontend/*.log
+
+# Lockfiles (keep ONE if you want; otherwise ignore extras)
+# If you standardize on pnpm, keep pnpm-lock.yaml and ignore others:
+app/frontend/package-lock.json
+app/frontend/yarn.lock
+
+# ===== Env / Secrets =====
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# ===== Local app data (建议) =====
+# 如果你本地会落盘 token/config，把路径统一到 .local/ 之类再忽略
+.local/
+data/
+.mcp.json
+specs
