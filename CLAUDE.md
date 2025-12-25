@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Replies must be in Chinese and logs and comments must be output in Chinese.
+
 ## Project Overview
 
 天翼云盘桌面客户端（Linux + Windows），采用 monorepo 单 go.mod 结构，提供 TUI（Bubble Tea）和 GUI（Wails）两种入口。核心原则：**一个 Core，多种入口**。
@@ -50,11 +52,13 @@ app/            # Wails 工程
 ## Critical Constraints
 
 **Core 三无原则**（`core/**` 必须遵守）：
+
 1. 无 UI 依赖（bubbletea/wails/前端库均禁止）
 2. 无持久化副作用（不直接读写文件/数据库）
 3. 无输出副作用（不直接 fmt.Println，日志通过注入）
 
 **依赖方向**：
+
 - `core/**` 禁止引用 `cmd/**`、`app/**`
 - `cmd/tui`、`app/backend` 只能依赖 `core/**`
 - 业务逻辑不得在 UI 层重复实现
@@ -64,3 +68,4 @@ app/            # Wails 工程
 ## Reference
 
 `cloud189-example/` 目录为参考项目，**只读不写**。
+
