@@ -3,14 +3,11 @@ package cloud189
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/gowsp/cloud189-desktop/core/httpclient"
 )
 
 // FlexString 兼容字符串和数字的 JSON 字段。
@@ -81,39 +78,6 @@ func (r *CodeResponse) Message() string {
 		return r.Msg
 	}
 	return r.ResMessage
-}
-
-// AppGet 以 App 签名发送 GET。
-func (c *Client) AppGet(ctx context.Context, path string, params map[string]string, out any) error {
-	return c.do(ctx, http.MethodGet, c.appBaseURL, path, params, out, c.appSigner.Middleware())
-}
-
-// AppPost 以 App 签名发送 POST。
-func (c *Client) AppPost(ctx context.Context, path string, params map[string]string, out any) error {
-	return c.do(ctx, http.MethodPost, c.appBaseURL, path, params, out, c.appSigner.Middleware())
-}
-
-// WebGet 带 Cookie 的 Web GET。
-func (c *Client) WebGet(ctx context.Context, path string, params map[string]string, out any) error {
-	mw := WithWebCookies(c.session)
-	return c.do(ctx, http.MethodGet, c.webBaseURL, path, params, out, mw)
-}
-
-// WebPost 带 Cookie 的 Web POST。
-func (c *Client) WebPost(ctx context.Context, path string, params map[string]string, out any) error {
-	mw := WithWebCookies(c.session)
-	return c.do(ctx, http.MethodPost, c.webBaseURL, path, params, out, mw)
-}
-
-func (c *Client) do(ctx context.Context, method, base, path string, params map[string]string, out any, middlewares ...httpclient.Middleware) error {
-	if c == nil {
-		return errors.New("cloud189: Client 未初始化")
-	}
-	req, err := buildRequest(ctx, method, base, path, params)
-	if err != nil {
-		return err
-	}
-	return c.useMiddlewares(req, out, middlewares...)
 }
 
 func buildRequest(ctx context.Context, method, base, path string, params map[string]string) (*http.Request, error) {

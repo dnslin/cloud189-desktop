@@ -12,18 +12,13 @@ import (
 
 // AppUpload 使用 App 签名器与 AES 参数加密执行上传相关接口。
 func (c *Client) AppUpload(ctx context.Context, path string, params url.Values, out any) error {
-	if c == nil {
-		return errors.New("cloud189: Client 未初始化")
+	session, err := c.prepareSessionProvider(ctx)
+	if err != nil {
+		return err
 	}
-	if c.appSigner == nil {
-		return errors.New("cloud189: App 签名器未设置")
-	}
-	if c.session == nil {
-		return errors.New("cloud189: SessionProvider 未设置")
-	}
-	secret := c.session.GetSessionSecret()
+	secret := session.GetSessionSecret()
 	if len(secret) < 16 {
-		return errors.New("cloud189: 会话密钥不足 16 位")
+		return WrapCloudError(ErrCodeInvalidToken, "会话密钥不足", errors.New("cloud189: 会话密钥不足 16 位"))
 	}
 	if params == nil {
 		params = url.Values{}
@@ -31,13 +26,13 @@ func (c *Client) AppUpload(ctx context.Context, path string, params url.Values, 
 	encoded := encodeValues(params)
 	cipher, err := crypto.EncryptECB([]byte(secret[:16]), []byte(encoded))
 	if err != nil {
-		return err
+		return ensureCloudError(ErrCodeUnknown, "参数加密失败", err)
 	}
 	hexParams := hex.EncodeToString(cipher)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinURL(c.uploadBase, path), nil)
 	if err != nil {
-		return err
+		return WrapCloudError(ErrCodeInvalidRequest, "构建上传请求失败", err)
 	}
 	q := req.URL.Query()
 	q.Set("params", hexParams)
@@ -48,28 +43,30 @@ func (c *Client) AppUpload(ctx context.Context, path string, params url.Values, 
 	req.Header.Set("accept", "application/json;charset=UTF-8")
 	req.Header.Set("cache-control", "no-cache")
 
-	return c.useMiddlewares(req, out, c.appSigner.Middleware())
+	signer, err := c.prepareAppSigner(ctx)
+	if err != nil {
+		return err
+	}
+	return ensureCloudError(ErrCodeUnknown, "上传请求失败", toCloudError(c.useMiddlewares(req, out, signer.Middleware())))
 }
 
 // WebUpload 使用 Web 上传签名。
 func (c *Client) WebUpload(ctx context.Context, path string, params url.Values, rsaKey *WebRSA, out any) error {
-	if c == nil {
-		return errors.New("cloud189: Client 未初始化")
-	}
-	if c.webSigner == nil {
-		return errors.New("cloud189: Web 签名器未设置")
-	}
 	if params == nil {
 		params = url.Values{}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinURL(c.uploadBase, path), nil)
 	if err != nil {
+		return WrapCloudError(ErrCodeInvalidRequest, "构建上传请求失败", err)
+	}
+	signer, err := c.prepareWebSigner(ctx)
+	if err != nil {
 		return err
 	}
-	if err := c.webSigner.Sign(req, params, rsaKey); err != nil {
-		return err
+	if err := signer.Sign(req, params, rsaKey); err != nil {
+		return ensureCloudError(ErrCodeInvalidRequest, "签名上传请求失败", err)
 	}
-	return c.useMiddlewares(req, out)
+	return ensureCloudError(ErrCodeUnknown, "上传请求失败", toCloudError(c.useMiddlewares(req, out)))
 }
 
 // FetchWebRSA 获取 Web 上传所需 RSA 公钥配置。
@@ -89,10 +86,11 @@ func (c *Client) WebSession(ctx context.Context) (string, error) {
 	if c == nil {
 		return "", errors.New("cloud189: Client 未初始化")
 	}
-	if c.session == nil {
-		return "", errors.New("cloud189: SessionProvider 未设置")
+	session, err := c.prepareSessionProvider(ctx)
+	if err != nil {
+		return "", err
 	}
-	if key := c.session.GetSessionKey(); key != "" {
+	if key := session.GetSessionKey(); key != "" {
 		return key, nil
 	}
 	// 通过 Web API 获取简要信息以填充 SessionKey。
@@ -104,9 +102,9 @@ func (c *Client) WebSession(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if info.SessionKey == "" {
-		return "", errors.New("cloud189: Web 会话缺少 sessionKey")
+		return "", WrapCloudError(ErrCodeInvalidToken, "Web 会话缺少 sessionKey", errors.New("cloud189: Web 会话缺少 sessionKey"))
 	}
-	if s, ok := c.session.(interface{ SetSessionKey(string) }); ok {
+	if s, ok := session.(interface{ SetSessionKey(string) }); ok {
 		s.SetSessionKey(info.SessionKey)
 	}
 	return info.SessionKey, nil

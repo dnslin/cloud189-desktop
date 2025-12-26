@@ -1,6 +1,7 @@
 package cloud189
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -8,16 +9,15 @@ import (
 	"github.com/gowsp/cloud189-desktop/core/httpclient"
 )
 
-// Client 统一封装 App/Web API 调用与签名。
+// Client 扁平 API 封装，负责会话刷新与账号切换。
 type Client struct {
-	http       *httpclient.Client
-	session    auth.SessionProvider
-	logger     httpclient.Logger
-	appSigner  *AppSigner
-	webSigner  *WebSigner
-	appBaseURL string
-	webBaseURL string
-	uploadBase string
+	authManager *auth.AuthManager
+	accountID   string
+	http        *httpclient.Client
+	logger      httpclient.Logger
+	appBaseURL  string
+	webBaseURL  string
+	uploadBase  string
 }
 
 // Option 自定义客户端配置。
@@ -59,34 +59,15 @@ func WithBaseURLs(app, web, upload string) Option {
 	}
 }
 
-// WithSessionProvider 替换 SessionProvider。
-func WithSessionProvider(sp auth.SessionProvider) Option {
-	return func(c *Client) {
-		c.session = sp
-	}
-}
-
-// WithSigners 注入自定义签名器，便于测试。
-func WithSigners(app *AppSigner, web *WebSigner) Option {
-	return func(c *Client) {
-		if app != nil {
-			c.appSigner = app
-		}
-		if web != nil {
-			c.webSigner = web
-		}
-	}
-}
-
 // NewClient 创建默认客户端。
-func NewClient(session auth.SessionProvider, opts ...Option) *Client {
+func NewClient(authManager *auth.AuthManager, opts ...Option) *Client {
 	cli := &Client{
-		http:       httpclient.NewClient(),
-		session:    session,
-		logger:     httpclient.NopLogger{},
-		appBaseURL: DefaultAppBaseURL,
-		webBaseURL: DefaultWebBaseURL,
-		uploadBase: DefaultUploadBaseURL,
+		authManager: authManager,
+		http:        httpclient.NewClient(),
+		logger:      httpclient.NopLogger{},
+		appBaseURL:  DefaultAppBaseURL,
+		webBaseURL:  DefaultWebBaseURL,
+		uploadBase:  DefaultUploadBaseURL,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -100,19 +81,108 @@ func NewClient(session auth.SessionProvider, opts ...Option) *Client {
 		cli.logger = httpclient.NopLogger{}
 	}
 	cli.http.Logger = cli.logger
-	if cli.appSigner == nil {
-		cli.appSigner = NewAppSigner(cli.session)
-	}
-	if cli.webSigner == nil {
-		cli.webSigner = NewWebSigner(cli.session)
-	}
+	cli.configureRetry()
 	return cli
+}
+
+// WithAccount 切换当前账号 ID。
+func (c *Client) WithAccount(accountID string) *Client {
+	c.accountID = accountID
+	return c
+}
+
+// AppGet 以 App 签名发送 GET。
+func (c *Client) AppGet(ctx context.Context, path string, params map[string]string, out any) error {
+	signer, err := c.prepareAppSigner(ctx)
+	if err != nil {
+		return err
+	}
+	return c.doRequest(ctx, http.MethodGet, c.appBaseURL, path, params, out, signer.Middleware())
+}
+
+// AppPost 以 App 签名发送 POST。
+func (c *Client) AppPost(ctx context.Context, path string, params map[string]string, out any) error {
+	signer, err := c.prepareAppSigner(ctx)
+	if err != nil {
+		return err
+	}
+	return c.doRequest(ctx, http.MethodPost, c.appBaseURL, path, params, out, signer.Middleware())
+}
+
+// WebGet 带 Cookie 的 Web GET。
+func (c *Client) WebGet(ctx context.Context, path string, params map[string]string, out any) error {
+	session, err := c.prepareSessionProvider(ctx)
+	if err != nil {
+		return err
+	}
+	mw := WithWebCookies(session)
+	return c.doRequest(ctx, http.MethodGet, c.webBaseURL, path, params, out, mw)
+}
+
+// WebPost 带 Cookie 的 Web POST。
+func (c *Client) WebPost(ctx context.Context, path string, params map[string]string, out any) error {
+	session, err := c.prepareSessionProvider(ctx)
+	if err != nil {
+		return err
+	}
+	mw := WithWebCookies(session)
+	return c.doRequest(ctx, http.MethodPost, c.webBaseURL, path, params, out, mw)
+}
+
+func (c *Client) prepareAppSigner(ctx context.Context) (*AppSigner, error) {
+	session, err := c.prepareSessionProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewAppSigner(session), nil
+}
+
+func (c *Client) prepareWebSigner(ctx context.Context) (*WebSigner, error) {
+	session, err := c.prepareSessionProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewWebSigner(session), nil
+}
+
+func (c *Client) prepareSessionProvider(ctx context.Context) (auth.SessionProvider, error) {
+	if c == nil || c.authManager == nil {
+		return nil, WrapCloudError(ErrCodeInvalidToken, "认证管理器未配置", errors.New("cloud189: AuthManager 未设置"))
+	}
+	if _, err := c.authManager.GetAccount(ctx, c.accountID); err != nil {
+		return nil, ensureCloudError(ErrCodeInvalidToken, "获取会话失败", err)
+	}
+	provider, err := c.authManager.SessionProvider(c.accountID)
+	if err != nil {
+		return nil, ensureCloudError(ErrCodeInvalidToken, "获取会话失败", err)
+	}
+	return provider, nil
+}
+
+func (c *Client) refreshCurrent(ctx context.Context) error {
+	if c == nil || c.authManager == nil {
+		return WrapCloudError(ErrCodeInvalidToken, "认证管理器未配置", errors.New("cloud189: AuthManager 未设置"))
+	}
+	if err := c.authManager.RefreshAccount(ctx, c.accountID); err != nil {
+		return WrapCloudError(ErrCodeInvalidToken, "凭证刷新失败", err)
+	}
+	return nil
+}
+
+func (c *Client) configureRetry() {
+	if c.http == nil {
+		return
+	}
+	cfg := httpclient.DefaultRetryConfig()
+	cfg.Refresh = func() error { return c.refreshCurrent(context.Background()) }
+	cfg.Logger = c.logger
+	c.http.Retry = httpclient.NewExponentialBackoffRetry(cfg)
 }
 
 // useMiddlewares 在一次请求内临时追加中间件。
 func (c *Client) useMiddlewares(req *http.Request, out any, mw ...httpclient.Middleware) error {
 	if c.http == nil {
-		return &httpclient.NetworkError{Err: errors.New("cloud189: httpclient 未初始化")}
+		return errors.New("cloud189: httpclient 未初始化")
 	}
 	orig := c.http.Prepare
 	combined := append(httpclient.PrepareChain{}, orig...)
@@ -120,4 +190,28 @@ func (c *Client) useMiddlewares(req *http.Request, out any, mw ...httpclient.Mid
 	c.http.Prepare = combined
 	defer func() { c.http.Prepare = orig }()
 	return c.http.Do(req, out)
+}
+
+func (c *Client) doRequest(ctx context.Context, method, base, path string, params map[string]string, out any, middlewares ...httpclient.Middleware) error {
+	if c == nil {
+		return WrapCloudError(ErrCodeInvalidRequest, "客户端未初始化", errors.New("cloud189: Client 未初始化"))
+	}
+	req, err := buildRequest(ctx, method, base, path, params)
+	if err != nil {
+		return WrapCloudError(ErrCodeInvalidRequest, "构建请求失败", err)
+	}
+	return ensureCloudError(ErrCodeUnknown, "请求失败", toCloudError(c.useMiddlewares(req, out, middlewares...)))
+}
+
+func ensureCloudError(code int, message string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ce, ok := err.(*CloudError); ok {
+		return ce
+	}
+	if conv, ok := toCloudError(err).(*CloudError); ok {
+		return conv
+	}
+	return WrapCloudError(code, message, err)
 }
