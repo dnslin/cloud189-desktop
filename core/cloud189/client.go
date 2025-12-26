@@ -3,7 +3,6 @@ package cloud189
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/gowsp/cloud189-desktop/core/auth"
@@ -201,13 +200,7 @@ func (c *Client) doRequest(ctx context.Context, method, base, path string, param
 	if err != nil {
 		return WrapCloudError(ErrCodeInvalidRequest, "构建请求失败", err)
 	}
-	// 调试日志：打印请求路径
-	fmt.Printf("[DEBUG] doRequest: %s %s%s\n", method, base, path)
-	rawErr := c.useMiddlewares(req, out, middlewares...)
-	if rawErr != nil {
-		fmt.Printf("[DEBUG] doRequest 原始错误: %T %v\n", rawErr, rawErr)
-	}
-	return ensureCloudError(ErrCodeUnknown, "请求失败", toCloudError(rawErr))
+	return ensureCloudError(ErrCodeUnknown, "请求失败", toCloudError(c.useMiddlewares(req, out, middlewares...)))
 }
 
 func ensureCloudError(code int, message string, err error) error {
