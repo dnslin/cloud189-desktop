@@ -146,7 +146,7 @@ func (c *Client) prepareWebSigner(ctx context.Context) (*WebSigner, error) {
 }
 
 func (c *Client) prepareSessionProvider(ctx context.Context) (auth.SessionProvider, error) {
-	if c == nil || c.authManager == nil {
+	if c.authManager == nil {
 		return nil, WrapCloudError(ErrCodeInvalidToken, "认证管理器未配置", errors.New("cloud189: AuthManager 未设置"))
 	}
 	if _, err := c.authManager.GetAccount(ctx, c.accountID); err != nil {
@@ -160,7 +160,7 @@ func (c *Client) prepareSessionProvider(ctx context.Context) (auth.SessionProvid
 }
 
 func (c *Client) refreshCurrent(ctx context.Context) error {
-	if c == nil || c.authManager == nil {
+	if c.authManager == nil {
 		return WrapCloudError(ErrCodeInvalidToken, "认证管理器未配置", errors.New("cloud189: AuthManager 未设置"))
 	}
 	if err := c.authManager.RefreshAccount(ctx, c.accountID); err != nil {
@@ -197,14 +197,17 @@ func (c *Client) useMiddlewares(req *http.Request, out any, mw ...httpclient.Mid
 }
 
 func (c *Client) doRequest(ctx context.Context, method, base, path string, params map[string]string, out any, middlewares ...httpclient.Middleware) error {
-	if c == nil {
-		return WrapCloudError(ErrCodeInvalidRequest, "客户端未初始化", errors.New("cloud189: Client 未初始化"))
-	}
 	req, err := buildRequest(ctx, method, base, path, params)
 	if err != nil {
 		return WrapCloudError(ErrCodeInvalidRequest, "构建请求失败", err)
 	}
-	return ensureCloudError(ErrCodeUnknown, "请求失败", toCloudError(c.useMiddlewares(req, out, middlewares...)))
+	if err := c.useMiddlewares(req, out, middlewares...); err != nil {
+		if ce, ok := toCloudError(err).(*CloudError); ok {
+			return ce
+		}
+		return WrapCloudError(ErrCodeUnknown, "请求失败", err)
+	}
+	return nil
 }
 
 func ensureCloudError(code int, message string, err error) error {

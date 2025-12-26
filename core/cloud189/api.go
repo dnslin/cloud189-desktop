@@ -14,6 +14,11 @@ import (
 type FlexString string
 
 func (f *FlexString) UnmarshalJSON(data []byte) error {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "null" {
+		*f = ""
+		return nil
+	}
 	// 尝试解析为字符串
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
@@ -26,7 +31,7 @@ func (f *FlexString) UnmarshalJSON(data []byte) error {
 		*f = FlexString(n.String())
 		return nil
 	}
-	return nil
+	return fmt.Errorf("cloud189: 无法解析 FlexString: %s", trimmed)
 }
 
 // String 返回字符串值。

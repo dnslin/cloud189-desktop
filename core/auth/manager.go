@@ -95,11 +95,11 @@ func (m *AuthManager) ListAccounts() []AccountSession {
 
 // GetAccount 返回指定账号（或当前账号）的有效 Session，必要时自动刷新。
 func (m *AuthManager) GetAccount(ctx context.Context, accountID string) (*Session, error) {
-	accID, acc, err := m.resolveAccount(accountID)
+	_, acc, err := m.resolveAccount(accountID)
 	if err != nil {
 		return nil, err
 	}
-	session, err := m.ensureSession(ctx, accID, acc)
+	session, err := m.ensureSession(ctx, acc)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +151,7 @@ func (m *AuthManager) resolveAccount(accountID string) (string, *AccountSession,
 	return id, acc, nil
 }
 
-func (m *AuthManager) ensureSession(ctx context.Context, accountID string, acc *AccountSession) (*Session, error) {
+func (m *AuthManager) ensureSession(ctx context.Context, acc *AccountSession) (*Session, error) {
 	if acc.Store == nil {
 		return nil, ErrSessionStoreNil
 	}
@@ -159,7 +159,7 @@ func (m *AuthManager) ensureSession(ctx context.Context, accountID string, acc *
 	if err != nil && !errors.Is(err, ErrSessionNotFound) {
 		return nil, err
 	}
-	needRefresh := session == nil || (session != nil && session.Expired(m.now()))
+	needRefresh := session == nil || session.Expired(m.now())
 	if acc.Refresher != nil && acc.Refresher.NeedsRefresh() {
 		needRefresh = true
 	}
@@ -223,12 +223,11 @@ func (p *storeProvider) session() *Session {
 	return session
 }
 
-func (p *storeProvider) save(session *Session) {
+func (p *storeProvider) save(session *Session) error {
 	if p == nil || p.manager == nil {
-		return
+		return errors.New("auth: 会话存储未初始化")
 	}
-	// TODO: 考虑添加 logger 记录保存失败
-	_ = p.manager.saveSnapshot(p.accountID, session)
+	return p.manager.saveSnapshot(p.accountID, session)
 }
 
 func (p *storeProvider) GetSessionKey() string {
@@ -266,11 +265,13 @@ func (p *storeProvider) GetCookieLoginUser() string {
 	return ""
 }
 
-func (p *storeProvider) SetSessionKey(key string) {
+func (p *storeProvider) SetSessionKey(key string) error {
 	session := p.session()
 	if session == nil {
 		session = &Session{}
 	}
-	session.SetSessionKey(key)
-	p.save(session)
+	if err := session.SetSessionKey(key); err != nil {
+		return err
+	}
+	return p.save(session)
 }

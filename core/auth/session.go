@@ -1,6 +1,9 @@
 package auth
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // SessionProvider 提供签名、鉴权所需的会话字段。
 type SessionProvider interface {
@@ -30,10 +33,12 @@ func (s *Session) GetSessionKey() string {
 }
 
 // SetSessionKey 设置 SessionKey（Web 上传时动态获取）。
-func (s *Session) SetSessionKey(key string) {
-	if s != nil {
-		s.SessionKey = key
+func (s *Session) SetSessionKey(key string) error {
+	if s == nil {
+		return errors.New("auth: Session 为空")
 	}
+	s.SessionKey = key
+	return nil
 }
 
 // GetSessionSecret 实现 SessionProvider。

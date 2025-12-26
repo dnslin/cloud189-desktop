@@ -17,7 +17,7 @@ func (t *CloudTime) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	if ts, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		if len(raw) > 10 {
+		if ts > 1e12 { // 毫秒级时间戳（大于 2001-09-09）
 			t.Time = time.UnixMilli(ts)
 		} else {
 			t.Time = time.Unix(ts, 0)

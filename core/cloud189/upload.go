@@ -104,8 +104,11 @@ func (c *Client) WebSession(ctx context.Context) (string, error) {
 	if info.SessionKey == "" {
 		return "", WrapCloudError(ErrCodeInvalidToken, "Web 会话缺少 sessionKey", errors.New("cloud189: Web 会话缺少 sessionKey"))
 	}
-	if s, ok := session.(interface{ SetSessionKey(string) }); ok {
-		s.SetSessionKey(info.SessionKey)
+	if s, ok := session.(interface{ SetSessionKey(string) error }); ok {
+		if err := s.SetSessionKey(info.SessionKey); err != nil {
+			c.logger.Errorf("保存 Web sessionKey 失败: %v", err)
+			return "", WrapCloudError(ErrCodeUnknown, "保存 Web sessionKey 失败", err)
+		}
 	}
 	return info.SessionKey, nil
 }
