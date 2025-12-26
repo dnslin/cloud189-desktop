@@ -206,11 +206,10 @@ func (f FileInfo) ToModel() model.File {
 // ToModel 将用户信息转换为领域模型。
 func (u UserInfo) ToModel() model.User {
 	return model.User{
-		ID:         u.UserID,
-		Name:       u.UserName,
-		NickName:   u.NickName,
-		FamilyID:   u.FamilyID,
-		SessionKey: u.SessionKey,
+		ID:       u.UserID,
+		Name:     u.UserName,
+		NickName: u.NickName,
+		FamilyID: u.FamilyID,
 		Quota: model.StorageQuota{
 			Capacity:  u.Capacity,
 			Available: u.Available,

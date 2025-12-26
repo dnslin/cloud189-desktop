@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -146,7 +145,7 @@ func (s *WebSigner) Sign(req *http.Request, params url.Values, rsaKey *WebRSA) e
 	}
 	aesKey := []byte(secret[:16])
 
-	encodedParams := encodeValues(params)
+	encodedParams := crypto.EncodeURLValues(params)
 	encryptedParams, err := crypto.EncryptECB(aesKey, []byte(encodedParams))
 	if err != nil {
 		return err
@@ -179,31 +178,6 @@ func (s *WebSigner) Sign(req *http.Request, params url.Values, rsaKey *WebRSA) e
 	req.Header.Set("EncryptionText", base64.StdEncoding.EncodeToString(encryptedKey))
 	req.Header.Set("PkId", rsaKey.PkId)
 	return nil
-}
-
-// encodeValues 以 util.EncodeParam 方式拼接参数，不做转义。
-func encodeValues(vals url.Values) string {
-	if len(vals) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(vals))
-	for k := range vals {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys) // 添加排序确保顺序一致
-	var buf strings.Builder
-	for _, key := range keys {
-		vs := vals[key]
-		for _, v := range vs {
-			if buf.Len() > 0 {
-				buf.WriteByte('&')
-			}
-			buf.WriteString(key)
-			buf.WriteByte('=')
-			buf.WriteString(v)
-		}
-	}
-	return buf.String()
 }
 
 // randomWebSecret 复刻官方随机串生成方式。

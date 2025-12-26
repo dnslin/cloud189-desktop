@@ -23,7 +23,7 @@ var (
 type AccountSession struct {
 	AccountID   string
 	DisplayName string
-	Store       store.SessionStore[Session]
+	Store       store.SessionStore
 	Refresher   Refresher
 }
 
@@ -158,7 +158,7 @@ func (m *AuthManager) ensureSession(ctx context.Context, acc *AccountSession) (*
 	if acc.Store == nil {
 		return nil, ErrSessionStoreNil
 	}
-	session, err := acc.Store.LoadSession()
+	session, err := loadSession(acc.Store)
 	if err != nil && !errors.Is(err, ErrSessionNotFound) {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (m *AuthManager) ensureSession(ctx context.Context, acc *AccountSession) (*
 		if err := acc.Refresher.Refresh(ctx); err != nil {
 			return nil, err
 		}
-		session, err = acc.Store.LoadSession()
+		session, err = loadSession(acc.Store)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +194,7 @@ func (m *AuthManager) snapshot(accountID string) (*Session, error) {
 	if acc.Store == nil {
 		return nil, ErrSessionStoreNil
 	}
-	return acc.Store.LoadSession()
+	return loadSession(acc.Store)
 }
 
 func (m *AuthManager) saveSnapshot(accountID string, session *Session) error {

@@ -23,7 +23,7 @@ func (c *Client) AppUpload(ctx context.Context, path string, params url.Values, 
 	if params == nil {
 		params = url.Values{}
 	}
-	encoded := encodeValues(params)
+	encoded := crypto.EncodeURLValues(params)
 	cipher, err := crypto.EncryptECB([]byte(secret[:16]), []byte(encoded))
 	if err != nil {
 		return ensureCloudError(ErrCodeUnknown, "参数加密失败", err)

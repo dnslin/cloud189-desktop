@@ -47,16 +47,22 @@ type memStore struct {
 	session *auth.Session
 }
 
-func (m *memStore) SaveSession(s *auth.Session) error {
+func (m *memStore) SaveSession(s any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s != nil {
-		m.session = s.Clone()
+	if s == nil {
+		m.session = nil
+		return nil
 	}
+	session, ok := s.(*auth.Session)
+	if !ok {
+		return fmt.Errorf("不支持的 Session 类型: %T", s)
+	}
+	m.session = session.Clone()
 	return nil
 }
 
-func (m *memStore) LoadSession() (*auth.Session, error) {
+func (m *memStore) LoadSession() (any, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if m.session == nil {

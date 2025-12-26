@@ -15,7 +15,7 @@ import (
 // AppRefresher 使用 accessToken 刷新 Session，失败时回退密码登录。
 type AppRefresher struct {
 	client     *httpclient.Client
-	store      store.SessionStore[Session]
+	store      store.SessionStore
 	login      *LoginClient
 	creds      Credentials
 	refreshURL string
@@ -56,7 +56,7 @@ func WithAppNow(now func() time.Time) AppRefresherOption {
 }
 
 // NewAppRefresher 创建 App 端刷新器。
-func NewAppRefresher(client *httpclient.Client, store store.SessionStore[Session], login *LoginClient, creds Credentials, opts ...AppRefresherOption) *AppRefresher {
+func NewAppRefresher(client *httpclient.Client, store store.SessionStore, login *LoginClient, creds Credentials, opts ...AppRefresherOption) *AppRefresher {
 	if client == nil {
 		client = httpclient.NewClient()
 	}
@@ -89,7 +89,7 @@ func (r *AppRefresher) Refresh(ctx context.Context) error {
 	if r.store == nil {
 		return ErrSessionStoreNil
 	}
-	session, err := r.store.LoadSession()
+	session, err := loadSession(r.store)
 	if err != nil && !errors.Is(err, ErrSessionNotFound) {
 		return err
 	}
@@ -123,7 +123,7 @@ func (r *AppRefresher) NeedsRefresh() bool {
 	if r.store == nil {
 		return true
 	}
-	session, err := r.store.LoadSession()
+	session, err := loadSession(r.store)
 	if err != nil || session == nil {
 		return true
 	}

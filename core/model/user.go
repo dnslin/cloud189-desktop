@@ -10,10 +10,9 @@ type StorageQuota struct {
 
 // User 描述登录用户信息。
 type User struct {
-	ID         string
-	Name       string
-	NickName   string
-	FamilyID   string
-	SessionKey string
-	Quota      StorageQuota
+	ID       string
+	Name     string
+	NickName string
+	FamilyID string
+	Quota    StorageQuota
 }

@@ -49,21 +49,12 @@ func NewAppSigner(session auth.SessionProvider, opts ...AppSignerOption) *AppSig
 			opt(signer)
 		}
 	}
-	if signer.now == nil {
-		signer.now = time.Now
-	}
-	if signer.requestID == nil {
-		signer.requestID = crypto.UUID
-	}
 	return signer
 }
 
 // Middleware 返回 httpclient 可用的中间件。
 func (s *AppSigner) Middleware() httpclient.Middleware {
 	return func(req *http.Request) error {
-		if s == nil {
-			return errors.New("cloud189: App 签名器未初始化")
-		}
 		if s.session == nil {
 			return errors.New("cloud189: SessionProvider 未设置")
 		}
