@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dnslin/cloud189-desktop/core/model"
 )
 
 // CloudTime 兼容时间戳字符串与毫秒整数。
@@ -178,4 +180,52 @@ type UploadFileMeta struct {
 type UploadCommitResponse struct {
 	CodeResponse
 	File UploadFileMeta `json:"file,omitempty"`
+}
+
+// ToModel 将文件信息转换为领域模型。
+func (f FileInfo) ToModel() model.File {
+	return model.File{
+		ID:          f.ID.String(),
+		ParentID:    f.ParentID.String(),
+		Name:        f.FileName,
+		Size:        f.FileSize,
+		MD5:         f.MD5,
+		MediaType:   f.MediaType,
+		Category:    f.FileCategory,
+		Revision:    f.Rev.String(),
+		Starred:     f.StarLabel > 0,
+		IsFolder:    f.IsFolder,
+		ChildCount:  f.FileCount,
+		ParentPath:  f.ParentPath,
+		DownloadURL: f.DownloadURL,
+		UpdatedAt:   f.LastOpTime.Time,
+		CreatedAt:   f.CreateDate.Time,
+	}
+}
+
+// ToModel 将用户信息转换为领域模型。
+func (u UserInfo) ToModel() model.User {
+	return model.User{
+		ID:         u.UserID,
+		Name:       u.UserName,
+		NickName:   u.NickName,
+		FamilyID:   u.FamilyID,
+		SessionKey: u.SessionKey,
+		Quota: model.StorageQuota{
+			Capacity:  u.Capacity,
+			Available: u.Available,
+			Used:      u.UsedSize,
+			Backup:    u.BackupSpace,
+		},
+	}
+}
+
+// ToModel 将容量信息转换为领域模型。
+func (c CapacityInfo) ToModel() model.StorageQuota {
+	return model.StorageQuota{
+		Capacity:  c.Capacity,
+		Available: c.Available,
+		Used:      c.UsedSize,
+		Backup:    c.BackupSpace,
+	}
 }

@@ -5,22 +5,25 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	coreerrors "github.com/dnslin/cloud189-desktop/core/errors"
+	"github.com/dnslin/cloud189-desktop/core/store"
 )
 
 var (
 	// ErrAccountNotFound 在账号不存在或未选择时返回。
-	ErrAccountNotFound = errors.New("auth: 未找到账号")
+	ErrAccountNotFound = coreerrors.New(coreerrors.ErrCodeNotFound, "auth: 未找到账号")
 	// ErrAccountIDEmpty 在新增账号时未提供 ID 返回。
-	ErrAccountIDEmpty = errors.New("auth: 账号 ID 不能为空")
+	ErrAccountIDEmpty = coreerrors.New(coreerrors.ErrCodeInvalidArgument, "auth: 账号 ID 不能为空")
 	// ErrRefresherNil 需要刷新但未配置刷新器时返回。
-	ErrRefresherNil = errors.New("auth: 未配置刷新器")
+	ErrRefresherNil = coreerrors.New(coreerrors.ErrCodeInvalidConfig, "auth: 未配置刷新器")
 )
 
 // AccountSession 记录账号关联的会话存储、刷新器与元信息。
 type AccountSession struct {
 	AccountID   string
 	DisplayName string
-	Store       SessionStore
+	Store       store.SessionStore[Session]
 	Refresher   Refresher
 }
 
@@ -225,7 +228,7 @@ func (p *storeProvider) session() *Session {
 
 func (p *storeProvider) save(session *Session) error {
 	if p == nil || p.manager == nil {
-		return errors.New("auth: 会话存储未初始化")
+		return coreerrors.Wrap(coreerrors.ErrCodeInvalidConfig, "auth: 会话存储未初始化", ErrSessionStoreNil)
 	}
 	return p.manager.saveSnapshot(p.accountID, session)
 }

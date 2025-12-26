@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gowsp/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/httpclient"
 )
 
 const (

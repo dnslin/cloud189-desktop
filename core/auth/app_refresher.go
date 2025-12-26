@@ -8,13 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gowsp/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/store"
 )
 
 // AppRefresher 使用 accessToken 刷新 Session，失败时回退密码登录。
 type AppRefresher struct {
 	client     *httpclient.Client
-	store      SessionStore
+	store      store.SessionStore[Session]
 	login      *LoginClient
 	creds      Credentials
 	refreshURL string
@@ -55,7 +56,7 @@ func WithAppNow(now func() time.Time) AppRefresherOption {
 }
 
 // NewAppRefresher 创建 App 端刷新器。
-func NewAppRefresher(client *httpclient.Client, store SessionStore, login *LoginClient, creds Credentials, opts ...AppRefresherOption) *AppRefresher {
+func NewAppRefresher(client *httpclient.Client, store store.SessionStore[Session], login *LoginClient, creds Credentials, opts ...AppRefresherOption) *AppRefresher {
 	if client == nil {
 		client = httpclient.NewClient()
 	}

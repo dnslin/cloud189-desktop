@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gowsp/cloud189-desktop/core/auth"
-	"github.com/gowsp/cloud189-desktop/core/cloud189"
-	"github.com/gowsp/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/auth"
+	"github.com/dnslin/cloud189-desktop/core/cloud189"
+	"github.com/dnslin/cloud189-desktop/core/httpclient"
 )
 
 const rootFolderID = "-11"

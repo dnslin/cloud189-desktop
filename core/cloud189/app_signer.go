@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gowsp/cloud189-desktop/core/auth"
-	"github.com/gowsp/cloud189-desktop/core/crypto"
-	"github.com/gowsp/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/auth"
+	"github.com/dnslin/cloud189-desktop/core/crypto"
+	"github.com/dnslin/cloud189-desktop/core/httpclient"
 )
 
 // AppSigner 负责 App 端签名，复刻官方 HMAC-SHA1 逻辑。

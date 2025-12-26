@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gowsp/cloud189-desktop/core/auth"
-	"github.com/gowsp/cloud189-desktop/core/crypto"
-	"github.com/gowsp/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/auth"
+	"github.com/dnslin/cloud189-desktop/core/crypto"
+	"github.com/dnslin/cloud189-desktop/core/httpclient"
 )
 
 // WebRSA 表示上传场景所需的公钥信息。

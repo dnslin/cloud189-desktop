@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gowsp/cloud189-desktop/core/auth"
-	"github.com/gowsp/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/auth"
+	"github.com/dnslin/cloud189-desktop/core/httpclient"
 )
 
 // Client 扁平 API 封装，负责会话刷新与账号切换。

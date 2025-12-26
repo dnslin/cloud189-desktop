@@ -1,3 +1,3 @@
-module github.com/gowsp/cloud189-desktop
+module github.com/dnslin/cloud189-desktop
 
 go 1.22

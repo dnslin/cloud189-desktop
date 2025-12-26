@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/gowsp/cloud189-desktop/core/crypto"
+	"github.com/dnslin/cloud189-desktop/core/crypto"
 )
 
 // AppUpload 使用 App 签名器与 AES 参数加密执行上传相关接口。
