@@ -56,7 +56,7 @@ type FileInfo struct {
 	MediaType     int        `json:"mediaType,omitempty"`
 	FileCategory  int        `json:"fileCata,omitempty"`
 	Orientation   int        `json:"orientation,omitempty"`
-	Rev           string     `json:"rev,omitempty"`
+	Rev           FlexString `json:"rev,omitempty"`
 	StarLabel     int        `json:"starLabel,omitempty"`
 	LastOpTime    CloudTime  `json:"lastOpTime,omitempty"`
 	CreateDate    CloudTime  `json:"createDate,omitempty"`
