@@ -260,7 +260,7 @@ func (l *LoginClient) fetchEncryptConf(ctx context.Context, content *loginContex
 }
 
 func (l *LoginClient) buildPwdRequest(ctx context.Context, loginCtx *loginContext, appConf *appConf, encryptConf *encryptConf, creds Credentials) (*http.Request, error) {
-	pubKey := wrapRSAPubKey(encryptConf.Data.PubKey)
+	pubKey := crypto.WrapRSAPubKey(encryptConf.Data.PubKey)
 	encUser, err := crypto.Encrypt(pubKey, []byte(creds.Username))
 	if err != nil {
 		return nil, err
@@ -382,17 +382,6 @@ type loginResult struct {
 	Msg    string `json:"msg,omitempty"`
 	ToURL  string `json:"toUrl,omitempty"`
 	SSON   string
-}
-
-func wrapRSAPubKey(key string) []byte {
-	var buf strings.Builder
-	buf.WriteString("-----BEGIN PUBLIC KEY-----\n")
-	buf.WriteString(key)
-	if !strings.HasSuffix(key, "\n") {
-		buf.WriteByte('\n')
-	}
-	buf.WriteString("-----END PUBLIC KEY-----")
-	return []byte(buf.String())
 }
 
 func findCookieValue(cookies []*http.Cookie, name string) string {

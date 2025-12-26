@@ -227,6 +227,7 @@ func (p *storeProvider) save(session *Session) {
 	if p == nil || p.manager == nil {
 		return
 	}
+	// TODO: 考虑添加 logger 记录保存失败
 	_ = p.manager.saveSnapshot(p.accountID, session)
 }
 

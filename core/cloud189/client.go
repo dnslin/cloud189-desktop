@@ -184,11 +184,15 @@ func (c *Client) useMiddlewares(req *http.Request, out any, mw ...httpclient.Mid
 	if c.http == nil {
 		return errors.New("cloud189: httpclient 未初始化")
 	}
-	orig := c.http.Prepare
-	combined := append(httpclient.PrepareChain{}, orig...)
-	combined = append(combined, mw...)
-	c.http.Prepare = combined
-	defer func() { c.http.Prepare = orig }()
+	// 先应用临时中间件到请求
+	for _, m := range mw {
+		if m != nil {
+			if err := m(req); err != nil {
+				return err
+			}
+		}
+	}
+	// 使用原有的 http client 执行请求
 	return c.http.Do(req, out)
 }
 

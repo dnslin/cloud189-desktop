@@ -1,13 +1,14 @@
 package cloud189
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -164,7 +165,7 @@ func (s *WebSigner) Sign(req *http.Request, params url.Values, rsaKey *WebRSA) e
 		sessionKey, strings.ToUpper(req.Method), req.URL.Path, requestDate, hexParams)
 	signature := crypto.Sign(signStr, secret)
 
-	pubKey := wrapRSAPubKey(rsaKey.PubKey)
+	pubKey := crypto.WrapRSAPubKey(rsaKey.PubKey)
 	encryptedKey, err := crypto.Encrypt(pubKey, []byte(secret))
 	if err != nil {
 		return err
@@ -180,16 +181,16 @@ func (s *WebSigner) Sign(req *http.Request, params url.Values, rsaKey *WebRSA) e
 	return nil
 }
 
-// encodeValues 以 util.EncodeParam 方式拼接参数，不做转义与排序。
+// encodeValues 以 util.EncodeParam 方式拼接参数，不做转义。
 func encodeValues(vals url.Values) string {
 	if len(vals) == 0 {
 		return ""
 	}
-	// 保留 map 的迭代结果，避免引入排序差异。
 	keys := make([]string, 0, len(vals))
 	for k := range vals {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys) // 添加排序确保顺序一致
 	var buf strings.Builder
 	for _, key := range keys {
 		vs := vals[key]
@@ -218,10 +219,11 @@ func randomWebSecret() string {
 	}
 	secret := string(tmpl)
 	// 16~31 位随机截断
-	max := 16 + int(16*rand.Float32())
-	if max < 16 {
-		max = 16
+	lenByte := make([]byte, 1)
+	if _, err := rand.Read(lenByte); err != nil {
+		return secret[:16]
 	}
+	max := 16 + int(lenByte[0])%16
 	if max > len(secret) {
 		max = len(secret)
 	}
@@ -229,7 +231,11 @@ func randomWebSecret() string {
 }
 
 func randomNibble() int {
-	return int(rand.Float32() * 16)
+	b := make([]byte, 1)
+	if _, err := rand.Read(b); err != nil {
+		return 0
+	}
+	return int(b[0]) & 0x0f
 }
 
 func hexChar(v int) byte {
@@ -237,17 +243,6 @@ func hexChar(v int) byte {
 		return byte('0' + v)
 	}
 	return byte('a' + v - 10)
-}
-
-func wrapRSAPubKey(body string) []byte {
-	var buf strings.Builder
-	buf.WriteString("-----BEGIN PUBLIC KEY-----\n")
-	buf.WriteString(body)
-	if !strings.HasSuffix(body, "\n") {
-		buf.WriteByte('\n')
-	}
-	buf.WriteString("-----END PUBLIC KEY-----")
-	return []byte(buf.String())
 }
 
 // WithWebCookies 为 Web API 补齐必需 Cookie。

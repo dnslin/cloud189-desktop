@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"strings"
 )
 
 // Encrypt 使用 RSA 公钥进行 PKCS1v15 加密。
@@ -19,6 +20,18 @@ func Encrypt(pubPEM []byte, data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return rsa.EncryptPKCS1v15(rand.Reader, pub, data)
+}
+
+// WrapRSAPubKey 将裸公钥包装为 PEM 格式。
+func WrapRSAPubKey(body string) []byte {
+	var buf strings.Builder
+	buf.WriteString("-----BEGIN PUBLIC KEY-----\n")
+	buf.WriteString(body)
+	if !strings.HasSuffix(body, "\n") {
+		buf.WriteByte('\n')
+	}
+	buf.WriteString("-----END PUBLIC KEY-----")
+	return []byte(buf.String())
 }
 
 func parsePublicKey(der []byte) (*rsa.PublicKey, error) {

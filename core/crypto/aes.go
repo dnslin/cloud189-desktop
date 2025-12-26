@@ -48,10 +48,12 @@ func EncryptHexECB(key []byte, plaintext string) string {
 
 func pkcs7Padding(data []byte, blockSize int) []byte {
 	padding := blockSize - len(data)%blockSize
-	for i := 0; i < padding; i++ {
-		data = append(data, byte(padding))
+	padded := make([]byte, len(data)+padding)
+	copy(padded, data)
+	for i := len(data); i < len(padded); i++ {
+		padded[i] = byte(padding)
 	}
-	return data
+	return padded
 }
 
 func pkcs7Unpadding(data []byte, blockSize int) ([]byte, error) {
