@@ -202,8 +202,8 @@ func runAllTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cli
 	if checkErr("CreateFolder", err) {
 		fmt.Println("创建文件夹失败，后续测试可能受影响")
 	} else {
-		testFolderID = folder.ID
-		cleanupIDs = append(cleanupIDs, folder.ID)
+		testFolderID = folder.ID.String()
+		cleanupIDs = append(cleanupIDs, folder.ID.String())
 		fmt.Printf("创建成功: %s (ID: %s)\n", folder.FileName, folder.ID)
 	}
 
@@ -217,8 +217,8 @@ func runAllTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cli
 
 		uploaded, err := client.SimpleUpload(ctx, testFolderID, uploadName, bytes.NewReader(payload))
 		if !checkErr("SimpleUpload", err) {
-			uploadedFileID = uploaded.ID
-			cleanupIDs = append(cleanupIDs, uploaded.ID)
+			uploadedFileID = uploaded.ID.String()
+			cleanupIDs = append(cleanupIDs, uploaded.ID.String())
 			fmt.Printf("上传成功: %s (ID: %s, 大小: %d)\n", uploaded.FileName, uploaded.ID, uploaded.FileSize)
 		}
 	} else {
@@ -288,8 +288,8 @@ func runAllTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cli
 		copyDestName := fmt.Sprintf("copy_dest_%d", time.Now().Unix())
 		copyDest, err := client.CreateFolder(ctx, rootFolderID, copyDestName)
 		if !checkErr("CreateFolder(复制目标)", err) {
-			cleanupIDs = append(cleanupIDs, copyDest.ID)
-			err = client.CopyFiles(ctx, []string{uploadedFileID}, copyDest.ID)
+			cleanupIDs = append(cleanupIDs, copyDest.ID.String())
+			err = client.CopyFiles(ctx, []string{uploadedFileID}, copyDest.ID.String())
 			if !checkErr("CopyFiles", err) {
 				fmt.Printf("复制成功: 文件已复制到 %s\n", copyDestName)
 			}
@@ -305,8 +305,8 @@ func runAllTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cli
 		moveDestName := fmt.Sprintf("move_dest_%d", time.Now().Unix())
 		moveDest, err := client.CreateFolder(ctx, rootFolderID, moveDestName)
 		if !checkErr("CreateFolder(移动目标)", err) {
-			cleanupIDs = append(cleanupIDs, moveDest.ID)
-			err = client.MoveFiles(ctx, []string{uploadedFileID}, moveDest.ID)
+			cleanupIDs = append(cleanupIDs, moveDest.ID.String())
+			err = client.MoveFiles(ctx, []string{uploadedFileID}, moveDest.ID.String())
 			if !checkErr("MoveFiles", err) {
 				fmt.Printf("移动成功: 文件已移动到 %s\n", moveDestName)
 				// 移动后文件不在原文件夹了，从 cleanupIDs 移除（会随目标文件夹一起删除）

@@ -29,6 +29,11 @@ func (f *FlexString) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// String 返回字符串值。
+func (f FlexString) String() string {
+	return string(f)
+}
+
 // CodeResponse 兼容 code/res_code 返回结构，实现业务错误检测。
 type CodeResponse struct {
 	CodeValue  string     `json:"code,omitempty"`

@@ -70,6 +70,8 @@ func (s *AppSigner) Middleware() httpclient.Middleware {
 		sessionKey := s.session.GetSessionKey()
 		sessionSecret := s.session.GetSessionSecret()
 		if sessionKey == "" || sessionSecret == "" {
+			// 调试日志：诊断会话密钥缺失原因
+			fmt.Printf("[DEBUG] AppSigner: sessionKey=%q, sessionSecret=%q\n", sessionKey, sessionSecret)
 			return errors.New("cloud189: 会话密钥缺失")
 		}
 

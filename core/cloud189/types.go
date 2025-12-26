@@ -48,26 +48,26 @@ type UserInfo struct {
 
 // FileInfo 统一 App/Web 文件或文件夹描述。
 type FileInfo struct {
-	ID            string    `json:"id,omitempty"`
-	ParentID      string    `json:"parentId,omitempty"`
-	FileName      string    `json:"name,omitempty"`
-	FileSize      int64     `json:"size,omitempty"`
-	MD5           string    `json:"md5,omitempty"`
-	MediaType     int       `json:"mediaType,omitempty"`
-	FileCategory  int       `json:"fileCata,omitempty"`
-	Orientation   int       `json:"orientation,omitempty"`
-	Rev           string    `json:"rev,omitempty"`
-	StarLabel     int       `json:"starLabel,omitempty"`
-	LastOpTime    CloudTime `json:"lastOpTime,omitempty"`
-	CreateDate    CloudTime `json:"createDate,omitempty"`
-	IsFolder      bool      `json:"isFolder,omitempty"`
-	FileCount     int       `json:"fileCount,omitempty"`
-	FileListSize  int       `json:"fileListSize,omitempty"`
-	ParentPath    string    `json:"filePath,omitempty"`
-	DownloadURL   string    `json:"fileDownloadUrl,omitempty"`
-	IconLargeURL  string    `json:"largeUrl,omitempty"`
-	IconMediumURL string    `json:"mediumUrl,omitempty"`
-	IconSmallURL  string    `json:"smallUrl,omitempty"`
+	ID            FlexString `json:"id,omitempty"`
+	ParentID      FlexString `json:"parentId,omitempty"`
+	FileName      string     `json:"name,omitempty"`
+	FileSize      int64      `json:"size,omitempty"`
+	MD5           string     `json:"md5,omitempty"`
+	MediaType     int        `json:"mediaType,omitempty"`
+	FileCategory  int        `json:"fileCata,omitempty"`
+	Orientation   int        `json:"orientation,omitempty"`
+	Rev           string     `json:"rev,omitempty"`
+	StarLabel     int        `json:"starLabel,omitempty"`
+	LastOpTime    CloudTime  `json:"lastOpTime,omitempty"`
+	CreateDate    CloudTime  `json:"createDate,omitempty"`
+	IsFolder      bool       `json:"isFolder,omitempty"`
+	FileCount     int        `json:"fileCount,omitempty"`
+	FileListSize  int        `json:"fileListSize,omitempty"`
+	ParentPath    string     `json:"filePath,omitempty"`
+	DownloadURL   string     `json:"fileDownloadUrl,omitempty"`
+	IconLargeURL  string     `json:"largeUrl,omitempty"`
+	IconMediumURL string     `json:"mediumUrl,omitempty"`
+	IconSmallURL  string     `json:"smallUrl,omitempty"`
 }
 
 // FileListResult 表示列表接口中的文件与文件夹集合。

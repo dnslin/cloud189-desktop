@@ -179,7 +179,7 @@ func (c *Client) CommitUpload(ctx context.Context, session *UploadSession) (*Fil
 	}
 	meta := rsp.File
 	return &FileInfo{
-		ID:       meta.ID,
+		ID:       FlexString(meta.ID),
 		FileName: meta.FileName,
 		FileSize: meta.FileSize,
 		MD5:      meta.FileMD5,

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -218,6 +219,8 @@ func (p *storeProvider) session() *Session {
 	}
 	session, err := p.manager.snapshot(p.accountID)
 	if err != nil {
+		// 调试日志：诊断 Session 加载失败原因
+		fmt.Printf("[DEBUG] storeProvider.session() 失败: accountID=%q, err=%v\n", p.accountID, err)
 		return nil
 	}
 	return session
