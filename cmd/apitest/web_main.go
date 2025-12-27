@@ -78,7 +78,7 @@ func (m *webMemStore) ClearSession() error {
 	return nil
 }
 
-func main() {
+func mains() {
 	reader := bufio.NewReader(os.Stdin)
 	log := webLogger{}
 
