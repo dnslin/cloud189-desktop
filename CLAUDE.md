@@ -6,48 +6,49 @@ Replies must be in Chinese and logs and comments must be output in Chinese.
 
 ## Project Overview
 
-天翼云盘桌面客户端（Linux + Windows），采用 monorepo 单 go.mod 结构，提供 TUI（Bubble Tea）和 GUI（Wails）两种入口。核心原则：**一个 Core，多种入口**。
+天翼云盘桌面客户端（Linux + Windows），采用 monorepo 单 go.mod 结构。核心原则：**一个 Core，多种入口**。
+
+当前状态：Core 业务库已完成，TUI/GUI 入口待开发。
 
 ## Build & Test Commands
 
 ```bash
 make check          # 全量检查（fmt + vet + lint + test + frontend-check）
-make test           # Go 测试
-make lint           # golangci-lint
+make test           # Go 测试（含 race 检测和覆盖率）
+make lint           # golangci-lint（仅 core 目录）
 make fmt            # gofmt
 make vet            # go vet
 
-# TUI 开发
-go run ./cmd/tui
+# 调试入口
+go run ./cmd/apitest
 
-# GUI 开发（在 app 目录）
-cd app && wails dev
-cd app && wails build
-
-# 前端（在 app/frontend）
-pnpm install
-pnpm lint
-pnpm typecheck
+# 单个测试
+go test ./core/auth/... -v -run TestLogin
 ```
 
 ## Architecture
 
 ```
-core/           # 纯业务库（禁止引用 cmd/app/UI 框架）
-├── cloud189/   # 189 API 实现
-├── drive/      # 业务接口（面向上层）
-├── auth/       # 登录/刷新
-├── model/      # 领域模型（File/Task/...）
-└── store/      # 存储接口定义（TokenStore/ConfigStore/SecretStore）
+core/               # 纯业务库（禁止引用 cmd/app/UI 框架）
+├── auth/           # 登录/刷新/多账号会话管理
+├── cloud189/       # 天翼云 API 实现（client/signer/upload）
+├── crypto/         # 加密工具（RSA/AES/HMAC/MD5）
+├── errors/         # 结构化错误（code/op/cause）
+├── httpclient/     # HTTP 客户端封装（重试/限流/中间件）
+├── model/          # 领域模型（File/User）
+└── store/          # 存储接口定义（SessionStore/TokenStore/ConfigStore）
 
 cmd/
-├── tui/        # bubbletea 终端入口
-└── cli/        # 调试入口
+└── apitest/        # 调试入口
 
-app/            # Wails 工程
-├── backend/    # Go backend（薄封装 core）
-└── frontend/   # Web 前端
+cloud189-example/   # 参考项目（只读不写）
 ```
+
+## Key Files
+
+- `core/auth/manager.go` - 多账号会话管理器 AuthManager
+- `core/cloud189/client.go` - API 客户端（会话刷新/账号切换）
+- `core/store/store.go` - 存储接口定义
 
 ## Critical Constraints
 
@@ -60,12 +61,9 @@ app/            # Wails 工程
 **依赖方向**：
 
 - `core/**` 禁止引用 `cmd/**`、`app/**`
-- `cmd/tui`、`app/backend` 只能依赖 `core/**`
 - 业务逻辑不得在 UI 层重复实现
-
-**传输任务**：上传/下载使用统一 Task 模型，UI 只订阅进度事件，传输逻辑只写一次。
+- 存储通过接口注入，实现放上层
 
 ## Reference
 
 `cloud189-example/` 目录为参考项目，**只读不写**。
-
