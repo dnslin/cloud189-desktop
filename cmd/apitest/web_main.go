@@ -14,7 +14,6 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dnslin/cloud189-desktop/core/auth"
@@ -41,42 +40,8 @@ type webLogger struct{}
 func (webLogger) Debugf(f string, a ...any) { fmt.Printf("[DEBUG] "+f+"\n", a...) }
 func (webLogger) Errorf(f string, a ...any) { fmt.Printf("[ERROR] "+f+"\n", a...) }
 
-// webMemStore 内存会话存储
-type webMemStore struct {
-	mu      sync.RWMutex
-	session *auth.Session
-}
-
-func (m *webMemStore) SaveSession(s any) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if s == nil {
-		m.session = nil
-		return nil
-	}
-	session, ok := s.(*auth.Session)
-	if !ok {
-		return fmt.Errorf("不支持的 Session 类型: %T", s)
-	}
-	m.session = session.Clone()
-	return nil
-}
-
-func (m *webMemStore) LoadSession() (any, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.session == nil {
-		return nil, auth.ErrSessionNotFound
-	}
-	return m.session.Clone(), nil
-}
-
-func (m *webMemStore) ClearSession() error {
-	m.mu.Lock()
-	m.session = nil
-	m.mu.Unlock()
-	return nil
-}
+// webMemStore 复用泛型内存存储
+type webMemStore = MemoryStore[*auth.Session]
 
 func mains() {
 	reader := bufio.NewReader(os.Stdin)

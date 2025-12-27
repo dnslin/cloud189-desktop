@@ -2,18 +2,18 @@ package task
 
 import (
 	"context"
-	"errors"
 	"sync"
 
+	coreerrors "github.com/dnslin/cloud189-desktop/core/errors"
 	"github.com/dnslin/cloud189-desktop/core/store"
 	"github.com/google/uuid"
 )
 
 // 错误定义。
 var (
-	ErrTaskNotFound  = errors.New("task: 任务不存在")
-	ErrTaskCanceled  = errors.New("task: 任务已取消")
-	ErrInvalidStatus = errors.New("task: 无效的任务状态")
+	ErrTaskNotFound  = coreerrors.New(coreerrors.ErrCodeNotFound, "task: 任务不存在")
+	ErrTaskCanceled  = coreerrors.New(coreerrors.ErrCodeInvalidState, "task: 任务已取消")
+	ErrInvalidStatus = coreerrors.New(coreerrors.ErrCodeInvalidState, "task: 无效的任务状态")
 )
 
 // Manager 任务管理器，负责任务调度和生命周期管理。

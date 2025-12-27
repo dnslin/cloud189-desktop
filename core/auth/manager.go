@@ -23,7 +23,7 @@ var (
 type AccountSession struct {
 	AccountID   string
 	DisplayName string
-	Store       store.SessionStore
+	Store       store.SessionStore[*Session]
 	Refresher   Refresher
 }
 

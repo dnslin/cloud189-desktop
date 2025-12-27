@@ -80,6 +80,8 @@ func WithMiddlewares(mw ...Middleware) Option {
 
 // NewClient 创建带默认重试、CookieJar 的客户端。
 func NewClient(opts ...Option) *Client {
+	// cookiejar.New(nil) 仅在传入非 nil Options 且 PublicSuffixList 为 nil 时返回错误
+	// 传入 nil 时不会返回错误，因此可以安全忽略
 	jar, _ := cookiejar.New(nil)
 	client := &Client{
 		HTTP:    &http.Client{Jar: jar},

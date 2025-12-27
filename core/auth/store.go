@@ -13,24 +13,9 @@ var (
 )
 
 // loadSession 将存储中的会话转换为 auth.Session。
-func loadSession(store store.SessionStore) (*Session, error) {
+func loadSession(store store.SessionStore[*Session]) (*Session, error) {
 	if store == nil {
 		return nil, ErrSessionStoreNil
 	}
-	raw, err := store.LoadSession()
-	if err != nil {
-		return nil, err
-	}
-	return castSession(raw)
-}
-
-func castSession(raw any) (*Session, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	session, ok := raw.(*Session)
-	if !ok {
-		return nil, coreerrors.New(coreerrors.ErrCodeInvalidState, "auth: SessionStore 返回非 Session 类型")
-	}
-	return session, nil
+	return store.LoadSession()
 }

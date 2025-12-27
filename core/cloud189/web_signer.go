@@ -71,7 +71,7 @@ type WebSigner struct {
 	session   auth.SessionProvider
 	now       func() time.Time
 	requestID func() string
-	keyGen    func() string
+	keyGen    func() (string, error)
 }
 
 // WebSignerOption 自定义签名器行为。
@@ -92,7 +92,7 @@ func WithWebSignerRequestID(fn func() string) WebSignerOption {
 }
 
 // WithWebSignerKeyGen 替换随机密钥生成逻辑。
-func WithWebSignerKeyGen(fn func() string) WebSignerOption {
+func WithWebSignerKeyGen(fn func() (string, error)) WebSignerOption {
 	return func(s *WebSigner) {
 		s.keyGen = fn
 	}
@@ -139,7 +139,10 @@ func (s *WebSigner) Sign(req *http.Request, params url.Values, rsaKey *WebRSA) e
 		return errors.New("cloud189: 会话缺少 SessionKey")
 	}
 
-	secret := s.keyGen()
+	secret, err := s.keyGen()
+	if err != nil {
+		return fmt.Errorf("cloud189: 生成加密密钥失败: %w", err)
+	}
 	if len(secret) < 16 {
 		return errors.New("cloud189: 生成加密密钥失败")
 	}
@@ -181,35 +184,43 @@ func (s *WebSigner) Sign(req *http.Request, params url.Values, rsaKey *WebRSA) e
 }
 
 // randomWebSecret 复刻官方随机串生成方式。
-func randomWebSecret() string {
+func randomWebSecret() (string, error) {
 	tmpl := []byte("xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx")
 	for i, b := range tmpl {
 		switch b {
 		case 'x':
-			tmpl[i] = hexChar(randomNibble())
+			v, err := randomNibble()
+			if err != nil {
+				return "", err
+			}
+			tmpl[i] = hexChar(v)
 		case 'y':
-			tmpl[i] = hexChar(randomNibble()&0x3 | 0x8)
+			v, err := randomNibble()
+			if err != nil {
+				return "", err
+			}
+			tmpl[i] = hexChar(v&0x3 | 0x8)
 		}
 	}
 	secret := string(tmpl)
 	// 16~31 位随机截断
 	lenByte := make([]byte, 1)
 	if _, err := rand.Read(lenByte); err != nil {
-		return secret[:16]
+		return "", err
 	}
 	max := 16 + int(lenByte[0])%16
 	if max > len(secret) {
 		max = len(secret)
 	}
-	return secret[:max]
+	return secret[:max], nil
 }
 
-func randomNibble() int {
+func randomNibble() (int, error) {
 	b := make([]byte, 1)
 	if _, err := rand.Read(b); err != nil {
-		return 0
+		return 0, err
 	}
-	return int(b[0]) & 0x0f
+	return int(b[0]) & 0x0f, nil
 }
 
 func hexChar(v int) byte {

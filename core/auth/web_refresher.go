@@ -15,7 +15,7 @@ import (
 // WebRefresher 通过访问登录页刷新 Cookie，失败回退密码登录。
 type WebRefresher struct {
 	client   *httpclient.Client
-	store    store.SessionStore
+	store    store.SessionStore[*Session]
 	login    *LoginClient
 	creds    Credentials
 	loginURL string
@@ -48,7 +48,7 @@ func WithWebNow(now func() time.Time) WebRefresherOption {
 }
 
 // NewWebRefresher 创建 Web 端刷新器。
-func NewWebRefresher(client *httpclient.Client, store store.SessionStore, login *LoginClient, creds Credentials, opts ...WebRefresherOption) *WebRefresher {
+func NewWebRefresher(client *httpclient.Client, store store.SessionStore[*Session], login *LoginClient, creds Credentials, opts ...WebRefresherOption) *WebRefresher {
 	if client == nil {
 		client = httpclient.NewClient()
 	}

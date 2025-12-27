@@ -28,41 +28,54 @@ type webLogger struct{}
 func (webLogger) Debugf(f string, a ...any) { fmt.Printf("[DEBUG] "+f+"\n", a...) }
 func (webLogger) Errorf(f string, a ...any) { fmt.Printf("[ERROR] "+f+"\n", a...) }
 
-// webMemStore 内存会话存储
-type webMemStore struct {
-	mu      sync.RWMutex
-	session *auth.Session
+// MemoryStore 内存会话存储
+type MemoryStore[T any] struct {
+	mu         sync.RWMutex
+	session    T
+	hasSession bool
 }
 
-func (m *webMemStore) SaveSession(s any) error {
+func (m *MemoryStore[T]) SaveSession(session T) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s == nil {
-		m.session = nil
+	if any(session) == nil {
+		m.reset()
 		return nil
 	}
-	session, ok := s.(*auth.Session)
-	if !ok {
-		return fmt.Errorf("不支持的 Session 类型: %T", s)
-	}
-	m.session = session.Clone()
+	m.session = cloneSession(session)
+	m.hasSession = true
 	return nil
 }
 
-func (m *webMemStore) LoadSession() (any, error) {
+func (m *MemoryStore[T]) LoadSession() (T, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if m.session == nil {
-		return nil, auth.ErrSessionNotFound
+	if !m.hasSession {
+		var zero T
+		return zero, auth.ErrSessionNotFound
 	}
-	return m.session.Clone(), nil
+	return cloneSession(m.session), nil
 }
 
-func (m *webMemStore) ClearSession() error {
+func (m *MemoryStore[T]) ClearSession() error {
 	m.mu.Lock()
-	m.session = nil
-	m.mu.Unlock()
+	defer m.mu.Unlock()
+	m.reset()
 	return nil
+}
+
+func (m *MemoryStore[T]) reset() {
+	var zero T
+	m.session = zero
+	m.hasSession = false
+}
+
+func cloneSession[T any](session T) T {
+	s, ok := any(session).(*auth.Session)
+	if !ok || s == nil {
+		return session
+	}
+	return any(s.Clone()).(T)
 }
 
 // WebUploader 实现 task.Uploader 接口（Web 模式）
@@ -174,10 +187,12 @@ func NewFileReader(path string) (*FileReader, error) {
 	return &FileReader{file: f, size: info.Size()}, nil
 }
 
-func (r *FileReader) Read(p []byte) (int, error)         { return r.file.Read(p) }
-func (r *FileReader) Seek(offset int64, whence int) (int64, error) { return r.file.Seek(offset, whence) }
-func (r *FileReader) Close() error                       { return r.file.Close() }
-func (r *FileReader) Size() int64                        { return r.size }
+func (r *FileReader) Read(p []byte) (int, error) { return r.file.Read(p) }
+func (r *FileReader) Seek(offset int64, whence int) (int64, error) {
+	return r.file.Seek(offset, whence)
+}
+func (r *FileReader) Close() error { return r.file.Close() }
+func (r *FileReader) Size() int64  { return r.size }
 
 // FileWriter 文件写入器
 type FileWriter struct {
@@ -192,9 +207,11 @@ func NewFileWriter(path string) (*FileWriter, error) {
 	return &FileWriter{file: f}, nil
 }
 
-func (w *FileWriter) Write(p []byte) (int, error)                  { return w.file.Write(p) }
-func (w *FileWriter) Seek(offset int64, whence int) (int64, error) { return w.file.Seek(offset, whence) }
-func (w *FileWriter) Close() error                                 { return w.file.Close() }
+func (w *FileWriter) Write(p []byte) (int, error) { return w.file.Write(p) }
+func (w *FileWriter) Seek(offset int64, whence int) (int64, error) {
+	return w.file.Seek(offset, whence)
+}
+func (w *FileWriter) Close() error { return w.file.Close() }
 
 func main() {
 	fmt.Println("=== Web API Task 模块集成测试 ===")
@@ -238,7 +255,7 @@ func main() {
 	fmt.Println("登录成功!")
 
 	// 创建 AuthManager
-	store := &webMemStore{}
+	store := &MemoryStore[*auth.Session]{}
 	_ = store.SaveSession(session)
 	authMgr := auth.NewAuthManager()
 	refresher := auth.NewAppRefresher(httpClient, store, loginClient, creds, auth.WithAppLogger(log))

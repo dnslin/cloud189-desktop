@@ -41,41 +41,54 @@ type logger struct{}
 func (logger) Debugf(f string, a ...any) { fmt.Printf("[DEBUG] "+f+"\n", a...) }
 func (logger) Errorf(f string, a ...any) { fmt.Printf("[ERROR] "+f+"\n", a...) }
 
-// memStore 内存会话存储
-type memStore struct {
-	mu      sync.RWMutex
-	session *auth.Session
+// MemoryStore 内存会话存储
+type MemoryStore[T any] struct {
+	mu         sync.RWMutex
+	session    T
+	hasSession bool
 }
 
-func (m *memStore) SaveSession(s any) error {
+func (m *MemoryStore[T]) SaveSession(session T) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s == nil {
-		m.session = nil
+	if any(session) == nil {
+		m.reset()
 		return nil
 	}
-	session, ok := s.(*auth.Session)
-	if !ok {
-		return fmt.Errorf("不支持的 Session 类型: %T", s)
-	}
-	m.session = session.Clone()
+	m.session = cloneSession(session)
+	m.hasSession = true
 	return nil
 }
 
-func (m *memStore) LoadSession() (any, error) {
+func (m *MemoryStore[T]) LoadSession() (T, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if m.session == nil {
-		return nil, auth.ErrSessionNotFound
+	if !m.hasSession {
+		var zero T
+		return zero, auth.ErrSessionNotFound
 	}
-	return m.session.Clone(), nil
+	return cloneSession(m.session), nil
 }
 
-func (m *memStore) ClearSession() error {
+func (m *MemoryStore[T]) ClearSession() error {
 	m.mu.Lock()
-	m.session = nil
-	m.mu.Unlock()
+	defer m.mu.Unlock()
+	m.reset()
 	return nil
+}
+
+func (m *MemoryStore[T]) reset() {
+	var zero T
+	m.session = zero
+	m.hasSession = false
+}
+
+func cloneSession[T any](session T) T {
+	s, ok := any(session).(*auth.Session)
+	if !ok || s == nil {
+		return session
+	}
+	return any(s.Clone()).(T)
 }
 
 func main() {
@@ -123,7 +136,7 @@ func main() {
 	fmt.Println("登录成功!")
 
 	// 4. 设置 AuthManager
-	store := &memStore{}
+	store := &MemoryStore[*auth.Session]{}
 	_ = store.SaveSession(session)
 	authMgr := auth.NewAuthManager()
 	refresher := auth.NewAppRefresher(httpClient, store, loginClient, creds, auth.WithAppLogger(log))

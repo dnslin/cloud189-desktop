@@ -30,41 +30,54 @@ type taskLogger struct{}
 func (taskLogger) Debugf(f string, a ...any) { fmt.Printf("[DEBUG] "+f+"\n", a...) }
 func (taskLogger) Errorf(f string, a ...any) { fmt.Printf("[ERROR] "+f+"\n", a...) }
 
-// taskMemStore 内存会话存储
-type taskMemStore struct {
-	mu      sync.RWMutex
-	session *auth.Session
+// MemoryStore 内存会话存储
+type MemoryStore[T any] struct {
+	mu         sync.RWMutex
+	session    T
+	hasSession bool
 }
 
-func (m *taskMemStore) SaveSession(s any) error {
+func (m *MemoryStore[T]) SaveSession(session T) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s == nil {
-		m.session = nil
+	if any(session) == nil {
+		m.reset()
 		return nil
 	}
-	session, ok := s.(*auth.Session)
-	if !ok {
-		return fmt.Errorf("不支持的 Session 类型: %T", s)
-	}
-	m.session = session.Clone()
+	m.session = cloneSession(session)
+	m.hasSession = true
 	return nil
 }
 
-func (m *taskMemStore) LoadSession() (any, error) {
+func (m *MemoryStore[T]) LoadSession() (T, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if m.session == nil {
-		return nil, auth.ErrSessionNotFound
+	if !m.hasSession {
+		var zero T
+		return zero, auth.ErrSessionNotFound
 	}
-	return m.session.Clone(), nil
+	return cloneSession(m.session), nil
 }
 
-func (m *taskMemStore) ClearSession() error {
+func (m *MemoryStore[T]) ClearSession() error {
 	m.mu.Lock()
-	m.session = nil
-	m.mu.Unlock()
+	defer m.mu.Unlock()
+	m.reset()
 	return nil
+}
+
+func (m *MemoryStore[T]) reset() {
+	var zero T
+	m.session = zero
+	m.hasSession = false
+}
+
+func cloneSession[T any](session T) T {
+	s, ok := any(session).(*auth.Session)
+	if !ok || s == nil {
+		return session
+	}
+	return any(s.Clone()).(T)
 }
 
 // FileUploadStateStore 文件存储实现 UploadStateStore 接口（用于断点续传测试）
@@ -254,10 +267,12 @@ func NewFileReader(path string) (*FileReader, error) {
 	return &FileReader{file: f, size: info.Size()}, nil
 }
 
-func (r *FileReader) Read(p []byte) (int, error)                   { return r.file.Read(p) }
-func (r *FileReader) Seek(offset int64, whence int) (int64, error) { return r.file.Seek(offset, whence) }
-func (r *FileReader) Close() error                                 { return r.file.Close() }
-func (r *FileReader) Size() int64                                  { return r.size }
+func (r *FileReader) Read(p []byte) (int, error) { return r.file.Read(p) }
+func (r *FileReader) Seek(offset int64, whence int) (int64, error) {
+	return r.file.Seek(offset, whence)
+}
+func (r *FileReader) Close() error { return r.file.Close() }
+func (r *FileReader) Size() int64  { return r.size }
 
 func main() {
 	reader := bufio.NewReader(os.Stdin)
@@ -303,7 +318,7 @@ func main() {
 	fmt.Println("登录成功!")
 
 	// 4. 设置 AuthManager
-	store := &taskMemStore{}
+	store := &MemoryStore[*auth.Session]{}
 	_ = store.SaveSession(session)
 	authMgr := auth.NewAuthManager()
 	refresher := auth.NewAppRefresher(httpClient, store, loginClient, creds, auth.WithAppLogger(log))

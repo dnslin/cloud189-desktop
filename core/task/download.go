@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 // DownloadMode 下载模式。
@@ -117,7 +119,7 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 
 	// 设置 Range 头（断点续传）
 	if startOffset > 0 {
-		req.Header.Set("Range", "bytes="+itoa(startOffset)+"-")
+		req.Header.Set("Range", "bytes="+strconv.FormatInt(startOffset, 10)+"-")
 	}
 
 	// 执行下载
@@ -149,9 +151,9 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 		if status == TaskStatusCanceled {
 			return
 		}
-		if status == TaskStatusPaused {
-			// 暂停时等待恢复
-			continue
+		for status == TaskStatusPaused {
+			time.Sleep(100 * time.Millisecond)
+			status = task.GetStatus()
 		}
 
 		n, readErr := resp.Body.Read(buf)
@@ -189,19 +191,4 @@ type DownloadError struct {
 
 func (e *DownloadError) Error() string {
 	return "下载失败: " + e.Status
-}
-
-// itoa 简单的 int64 转字符串。
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte(n%10) + '0'
-		n /= 10
-	}
-	return string(buf[i:])
 }

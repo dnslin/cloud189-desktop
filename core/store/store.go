@@ -1,9 +1,9 @@
 package store
 
 // SessionStore 抽象会话存储，由业务方约定具体 Session 结构体。
-type SessionStore interface {
-	SaveSession(session any) error
-	LoadSession() (any, error)
+type SessionStore[T any] interface {
+	SaveSession(session T) error
+	LoadSession() (T, error)
 	ClearSession() error
 }
 
