@@ -422,3 +422,27 @@ func (s *UploadSession) computeHashes() {
 		s.SliceMD5 = hex.EncodeToString(hasher.Sum(nil))
 	}
 }
+
+// ResumeUploadSession 恢复上传会话（用于断点续传）。
+// uploadFileID 为之前保存的上传会话 ID，uploadedSize 为已上传字节数，partHashes 为已上传分片的 MD5 列表。
+func (c *Client) ResumeUploadSession(parentID, filename string, fileSize int64, uploadFileID string, uploadedSize int64, partHashes []string) *UploadSession {
+	return &UploadSession{
+		UploadInitData: UploadInitData{
+			UploadFileID: uploadFileID,
+		},
+		ParentID:   parentID,
+		FileName:   filename,
+		FileSize:   fileSize,
+		SliceSize:  DefaultSliceSize,
+		LazyCheck:  true,
+		partHashes: partHashes,
+	}
+}
+
+// GetPartHashes 返回已上传分片的 MD5 列表。
+func (s *UploadSession) GetPartHashes() []string {
+	if s == nil {
+		return nil
+	}
+	return s.partHashes
+}

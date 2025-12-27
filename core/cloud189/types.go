@@ -182,6 +182,20 @@ type UploadCommitResponse struct {
 	File UploadFileMeta `json:"file,omitempty"`
 }
 
+// UploadFileStatus 上传文件状态（用于断点续传）。
+type UploadFileStatus struct {
+	UploadFileID   string `json:"uploadFileId,omitempty"`
+	Size           int64  `json:"size,omitempty"`           // 已上传字节数
+	FileUploadURL  string `json:"fileUploadUrl,omitempty"`  // 文件上传 URL
+	FileCommitURL  string `json:"fileCommitUrl,omitempty"`  // 确认上传完成 URL
+	FileDataExists int    `json:"fileDataExists,omitempty"` // 1=文件已存在（秒传）
+}
+
+// Exists 标记服务器是否已有文件数据。
+func (s UploadFileStatus) Exists() bool {
+	return s.FileDataExists == 1
+}
+
 // ToModel 将文件信息转换为领域模型。
 func (f FileInfo) ToModel() model.File {
 	return model.File{

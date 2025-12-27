@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/dnslin/cloud189-desktop/core/auth"
 	"github.com/dnslin/cloud189-desktop/core/cloud189"
 	"github.com/dnslin/cloud189-desktop/core/httpclient"
+	"github.com/dnslin/cloud189-desktop/core/store"
 	"github.com/dnslin/cloud189-desktop/core/task"
 )
 
@@ -65,6 +67,56 @@ func (m *taskMemStore) ClearSession() error {
 	return nil
 }
 
+// FileUploadStateStore 文件存储实现 UploadStateStore 接口（用于断点续传测试）
+type FileUploadStateStore struct {
+	mu       sync.RWMutex
+	filePath string
+	states   map[string]*store.UploadState
+}
+
+func NewFileUploadStateStore(filePath string) *FileUploadStateStore {
+	s := &FileUploadStateStore{
+		filePath: filePath,
+		states:   make(map[string]*store.UploadState),
+	}
+	// 尝试从文件加载
+	if data, err := os.ReadFile(filePath); err == nil {
+		_ = json.Unmarshal(data, &s.states)
+	}
+	return s
+}
+
+func (s *FileUploadStateStore) SaveState(localPath string, state *store.UploadState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.states[localPath] = state
+	return s.persist()
+}
+
+func (s *FileUploadStateStore) LoadState(localPath string) (*store.UploadState, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if state, ok := s.states[localPath]; ok {
+		return state, nil
+	}
+	return nil, fmt.Errorf("状态不存在")
+}
+
+func (s *FileUploadStateStore) DeleteState(localPath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.states, localPath)
+	return s.persist()
+}
+
+func (s *FileUploadStateStore) persist() error {
+	data, err := json.MarshalIndent(s.states, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.filePath, data, 0644)
+}
+
 // AppUploader 实现 task.Uploader 接口（App 模式）
 type AppUploader struct {
 	client  *cloud189.Client
@@ -76,15 +128,26 @@ func (u *AppUploader) Mode() task.UploadMode {
 	return task.UploadModeApp
 }
 
-func (u *AppUploader) InitUpload(ctx context.Context, parentID, filename string, size int64) (string, bool, []int, error) {
+func (u *AppUploader) InitUpload(ctx context.Context, parentID, filename string, size int64, resumeState *task.ResumeState) (string, bool, int64, error) {
+	// 尝试恢复上传
+	if resumeState != nil && resumeState.UploadFileID != "" {
+		// 恢复上传会话（包含已上传分片的 hash）
+		session := u.client.ResumeUploadSession(parentID, filename, size, resumeState.UploadFileID, resumeState.UploadedSize, resumeState.PartHashes)
+		u.mu.Lock()
+		u.session = session
+		u.mu.Unlock()
+		return resumeState.UploadFileID, false, resumeState.UploadedSize, nil
+	}
+
+	// 新建上传
 	session, err := u.client.InitUpload(ctx, parentID, filename, size)
 	if err != nil {
-		return "", false, nil, err
+		return "", false, 0, err
 	}
 	u.mu.Lock()
 	u.session = session
 	u.mu.Unlock()
-	return session.UploadFileID, session.Exists(), nil, nil
+	return session.UploadFileID, session.Exists(), 0, nil
 }
 
 func (u *AppUploader) UploadPart(ctx context.Context, uploadFileID string, partNum int, data io.Reader) error {
@@ -116,6 +179,15 @@ func (u *AppUploader) CommitUpload(ctx context.Context, uploadFileID string, fil
 		return "", err
 	}
 	return info.ID.String(), nil
+}
+
+func (u *AppUploader) GetPartHashes() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.session == nil {
+		return nil
+	}
+	return u.session.GetPartHashes()
 }
 
 // AppDownloader 实现 task.Downloader 接口（App 模式）
@@ -256,11 +328,17 @@ func taskReadLine(r *bufio.Reader) string {
 	return line
 }
 
-func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Client) {
+func runTaskTests(ctx context.Context, client *cloud189.Client, _ *http.Client) {
 	fmt.Println("\n========== Task 模块测试 ==========")
 
-	// 创建 TaskManager
-	manager := task.NewManager(task.WithMaxConcurrent(2))
+	// 创建上传状态存储（用于断点续传）
+	uploadStateStore := NewFileUploadStateStore("/tmp/upload_state.json")
+
+	// 创建 TaskManager（启用断点续传）
+	manager := task.NewManager(
+		task.WithMaxConcurrent(2),
+		task.WithUploadStateStore(uploadStateStore),
+	)
 
 	// 订阅进度更新（每 5% 更新一次）
 	var lastPercent float64
@@ -275,7 +353,9 @@ func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cl
 		}
 	})
 
-	/* 上传测试暂时注释
+	// ========== 上传断点续传测试 ==========
+	fmt.Println("\n========== 上传断点续传测试 ==========")
+
 	// 创建测试文件夹
 	fmt.Println("\n--- 创建测试文件夹 ---")
 	folderName := fmt.Sprintf("task_test_%d", time.Now().Unix())
@@ -295,173 +375,135 @@ func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cl
 		} else {
 			fmt.Println("清理成功!")
 		}
+		// 清理状态文件
+		os.Remove("/tmp/upload_state.json")
 	}()
 
-	// 创建测试文件
+	// 创建测试文件（50MB，5个分片）
 	fmt.Println("\n--- 创建测试文件 ---")
 	testFilePath := "/tmp/task_test_upload.bin"
-	testFileSize := int64(50 * 1024 * 1024) // 50MB（测试多分片，便于观察暂停/恢复）
+	testFileSize := int64(50 * 1024 * 1024) // 50MB
 	if err := createTestFile(testFilePath, testFileSize); err != nil {
 		fmt.Printf("创建测试文件失败: %v\n", err)
 		return
 	}
 	defer os.Remove(testFilePath)
-	fmt.Printf("创建测试文件: %s (%d bytes)\n", testFilePath, testFileSize)
+	fmt.Printf("创建测试文件: %s (%d bytes, %d 个分片)\n", testFilePath, testFileSize, testFileSize/(10*1024*1024))
 
-	// 测试上传
-	fmt.Println("\n--- 测试上传任务 ---")
-	uploader := &AppUploader{client: client}
-	uploadReader, err := NewFileReader(testFilePath)
+	uploadFileName := fmt.Sprintf("upload_resume_test_%d.bin", time.Now().Unix())
+
+	// ===== 第一次上传：上传一部分后取消 =====
+	fmt.Println("\n--- [第一次上传] 上传一部分后取消 ---")
+	uploader1 := &AppUploader{client: client}
+	uploadReader1, err := NewFileReader(testFilePath)
 	if err != nil {
 		fmt.Printf("打开文件失败: %v\n", err)
 		return
 	}
 
-	uploadCfg := task.UploadConfig{
+	uploadCfg1 := task.UploadConfig{
 		LocalPath: testFilePath,
-		FileName:  fmt.Sprintf("upload_test_%d.bin", time.Now().Unix()),
+		FileName:  uploadFileName,
 		ParentID:  testFolderID,
 	}
 
-	taskID, err := manager.AddUpload(uploadCfg, uploader, uploadReader)
+	taskID1, err := manager.AddUpload(uploadCfg1, uploader1, uploadReader1)
 	if err != nil {
 		fmt.Printf("添加上传任务失败: %v\n", err)
 		return
 	}
-	fmt.Printf("上传任务已添加: %s\n", taskID)
+	fmt.Printf("上传任务已添加: %s\n", taskID1)
 
-	// 测试暂停/恢复（断点续传）
-	go func() {
-		time.Sleep(1 * time.Second) // 等待上传开始
-		t, _ := manager.GetTask(taskID)
-		if t.Status == task.TaskStatusRunning && t.Progress > 0 {
-			fmt.Println("\n--- 测试暂停/恢复 ---")
-			fmt.Printf("当前进度: %d bytes, 暂停任务...\n", t.Progress)
-			if err := manager.Pause(taskID); err != nil {
-				fmt.Printf("暂停失败: %v\n", err)
-				return
-			}
-			time.Sleep(2 * time.Second)
-			fmt.Println("恢复任务...")
-			if err := manager.Resume(taskID); err != nil {
-				fmt.Printf("恢复失败: %v\n", err)
-			}
+	// 等待上传进度达到 30% 后取消
+	targetPercent := 30.0
+	fmt.Printf("等待上传进度达到 %.0f%% 后取消...\n", targetPercent)
+	for {
+		t1, _ := manager.GetTask(taskID1)
+		if t1.Status == task.TaskStatusCompleted || t1.Status == task.TaskStatusFailed || t1.Status == task.TaskStatusCanceled {
+			fmt.Printf("任务已结束: %s\n", t1.Status.String())
+			break
 		}
-	}()
+		if t1.Percent() >= targetPercent {
+			fmt.Printf("已上传: %d bytes (%.1f%%), 取消任务...\n", t1.Progress, t1.Percent())
+			manager.Cancel(taskID1)
+			time.Sleep(500 * time.Millisecond)
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 
-	// 等待上传完成
-	waitForTask(manager, taskID, 5*time.Minute)
+	// 检查状态文件
+	fmt.Println("\n--- 检查上传状态文件 ---")
+	if stateData, err := os.ReadFile("/tmp/upload_state.json"); err == nil {
+		fmt.Printf("状态文件内容:\n%s\n", string(stateData))
+	}
 
-	// 获取上传的文件 ID
-	uploadTask, _ := manager.GetTask(taskID)
-	if uploadTask.Status != task.TaskStatusCompleted {
-		fmt.Printf("上传失败: %v\n", uploadTask.Error)
+	// ===== 第二次上传：断点续传 =====
+	fmt.Println("\n--- [第二次上传] 断点续传 ---")
+
+	// 重新创建 Manager（模拟进程重启）
+	uploadStateStore2 := NewFileUploadStateStore("/tmp/upload_state.json")
+	manager2 := task.NewManager(
+		task.WithMaxConcurrent(2),
+		task.WithUploadStateStore(uploadStateStore2),
+	)
+	manager2.Subscribe(func(t *task.Task) {
+		percent := t.Percent()
+		if percent-lastPercent >= 5 || percent == 100 || t.Status != task.TaskStatusRunning {
+			speed := float64(t.Speed) / 1024 / 1024
+			fmt.Printf("[%s] %s: %.1f%% (%.2f MB/s) - %s\n",
+				t.Type.String(), t.FileName, percent, speed, t.Status.String())
+			lastPercent = percent
+		}
+	})
+
+	uploader2 := &AppUploader{client: client}
+	uploadReader2, err := NewFileReader(testFilePath)
+	if err != nil {
+		fmt.Printf("打开文件失败: %v\n", err)
 		return
 	}
-	上传测试暂时注释 */
 
-	// 测试下载（使用已存在的文件）
-	fmt.Println("\n--- 查找测试文件 ---")
-	testFolderID := "524821226301804505"
+	uploadCfg2 := task.UploadConfig{
+		LocalPath: testFilePath,
+		FileName:  uploadFileName,
+		ParentID:  testFolderID,
+	}
+
+	taskID2, err := manager2.AddUpload(uploadCfg2, uploader2, uploadReader2)
+	if err != nil {
+		fmt.Printf("添加上传任务失败: %v\n", err)
+		return
+	}
+	fmt.Printf("上传任务已添加: %s\n", taskID2)
+
+	// 等待上传完成
+	waitForTask(manager2, taskID2, 5*time.Minute)
+
+	t2, _ := manager2.GetTask(taskID2)
+	if t2.Status == task.TaskStatusCompleted {
+		fmt.Println("\n✓ 上传断点续传测试成功!")
+	} else {
+		fmt.Printf("\n✗ 上传失败: %v\n", t2.Error)
+	}
+
+	// 验证文件已上传
+	fmt.Println("\n--- 验证上传的文件 ---")
 	fileList, err := client.ListFiles(ctx, testFolderID)
 	if err != nil {
 		fmt.Printf("列出文件失败: %v\n", err)
 		return
 	}
-	var downloadFileID string
-	var expectedSize int64
 	for _, item := range fileList.Items() {
-		if item.FileName == "kmssDevPluginIdea-1.0.16.v20240109.zip" {
-			downloadFileID = item.ID.String()
-			expectedSize = item.FileSize
-			fmt.Printf("找到测试文件: %s (ID: %s, 大小: %d bytes)\n", item.FileName, downloadFileID, expectedSize)
+		if item.FileName == uploadFileName {
+			fmt.Printf("找到上传的文件: %s (大小: %d bytes)\n", item.FileName, item.FileSize)
+			if item.FileSize == testFileSize {
+				fmt.Println("✓ 文件大小匹配!")
+			} else {
+				fmt.Printf("✗ 文件大小不匹配! 预期: %d, 实际: %d\n", testFileSize, item.FileSize)
+			}
 			break
 		}
-	}
-	if downloadFileID == "" {
-		fmt.Println("未找到测试文件 kmssDevPluginIdea-1.0.16.v20240109.zip")
-		return
-	}
-
-	// 测试下载
-	fmt.Println("\n--- 测试下载任务（断点续传）---")
-	downloader := &AppDownloader{client: client, httpClient: rawHTTP}
-	downloadPath := "/tmp/task_test_download.zip"
-
-	// 第一次下载：下载一部分后取消
-	fmt.Println("\n[第一次下载] 下载一部分后取消...")
-	downloadWriter1, err := NewFileWriter(downloadPath)
-	if err != nil {
-		fmt.Printf("创建下载文件失败: %v\n", err)
-		return
-	}
-
-	downloadCfg1 := task.DownloadConfig{
-		FileID:    downloadFileID,
-		LocalPath: downloadPath,
-		Resume:    false, // 第一次不需要续传
-	}
-
-	downloadTaskID1, err := manager.AddDownload(downloadCfg1, downloader, downloadWriter1)
-	if err != nil {
-		fmt.Printf("添加下载任务失败: %v\n", err)
-		return
-	}
-
-	// 等待下载一部分后取消
-	time.Sleep(2 * time.Second)
-	t1, _ := manager.GetTask(downloadTaskID1)
-	fmt.Printf("已下载: %d bytes (%.1f%%), 取消任务...\n", t1.Progress, t1.Percent())
-	manager.Cancel(downloadTaskID1)
-	time.Sleep(500 * time.Millisecond) // 等待取消完成
-
-	// 检查已下载的文件大小
-	partialInfo, _ := os.Stat(downloadPath)
-	fmt.Printf("部分下载文件大小: %d bytes\n", partialInfo.Size())
-
-	// 第二次下载：断点续传
-	fmt.Println("\n[第二次下载] 断点续传...")
-	downloadWriter2, err := NewFileWriter(downloadPath)
-	if err != nil {
-		fmt.Printf("创建下载文件失败: %v\n", err)
-		return
-	}
-
-	downloadCfg2 := task.DownloadConfig{
-		FileID:    downloadFileID,
-		LocalPath: downloadPath,
-		Resume:    true, // 启用断点续传
-	}
-
-	downloadTaskID2, err := manager.AddDownload(downloadCfg2, downloader, downloadWriter2)
-	if err != nil {
-		fmt.Printf("添加下载任务失败: %v\n", err)
-		return
-	}
-	fmt.Printf("下载任务已添加: %s\n", downloadTaskID2)
-
-	// 等待下载完成
-	waitForTask(manager, downloadTaskID2, 5*time.Minute)
-
-	downloadTask, _ := manager.GetTask(downloadTaskID2)
-	if downloadTask.Status != task.TaskStatusCompleted {
-		fmt.Printf("下载失败: %v\n", downloadTask.Error)
-		return
-	}
-	defer os.Remove(downloadPath)
-
-	// 验证下载的文件
-	fmt.Println("\n--- 验证下载的文件 ---")
-	downloadInfo, err := os.Stat(downloadPath)
-	if err != nil {
-		fmt.Printf("获取下载文件信息失败: %v\n", err)
-		return
-	}
-	fmt.Printf("下载文件大小: %d bytes (预期: %d bytes)\n", downloadInfo.Size(), expectedSize)
-	if downloadInfo.Size() == expectedSize {
-		fmt.Println("✓ 文件大小匹配!")
-	} else {
-		fmt.Println("✗ 文件大小不匹配!")
 	}
 
 	fmt.Println("\n========== Task 测试完成 ==========")

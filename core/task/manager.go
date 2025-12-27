@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/dnslin/cloud189-desktop/core/store"
 	"github.com/google/uuid"
 )
 
@@ -22,8 +23,9 @@ type Manager struct {
 	callbacks []ProgressCallback            // 进度回调列表
 	cancels   map[string]context.CancelFunc // 任务取消函数
 
-	maxConcurrent int           // 最大并发数
-	semaphore     chan struct{} // 并发控制信号量
+	maxConcurrent    int                    // 最大并发数
+	semaphore        chan struct{}          // 并发控制信号量
+	uploadStateStore store.UploadStateStore // 上传状态存储（可选，用于断点续传）
 }
 
 // ManagerOption 管理器配置选项。
@@ -35,6 +37,13 @@ func WithMaxConcurrent(n int) ManagerOption {
 		if n > 0 {
 			m.maxConcurrent = n
 		}
+	}
+}
+
+// WithUploadStateStore 设置上传状态存储（启用断点续传）。
+func WithUploadStateStore(s store.UploadStateStore) ManagerOption {
+	return func(m *Manager) {
+		m.uploadStateStore = s
 	}
 }
 
