@@ -190,11 +190,8 @@ func (c *Client) execute(req *http.Request, out any) (*http.Response, error) {
 		return resp, statusToErr(resp.StatusCode)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		// 调试：打印错误响应
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		fmt.Printf("[DEBUG] HTTP %d: %s\n", resp.StatusCode, string(bodyBytes))
 		var ec ErrCode
-		if decodeErr := json.Unmarshal(bodyBytes, &ec); decodeErr == nil {
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&ec); decodeErr == nil {
 			if ec.Status == 0 {
 				ec.Status = resp.StatusCode
 			}

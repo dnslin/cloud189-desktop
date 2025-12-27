@@ -94,8 +94,6 @@ func (u *AppUploader) UploadPart(ctx context.Context, uploadFileID string, partN
 	if session == nil {
 		return fmt.Errorf("session 未初始化")
 	}
-	// 调试：打印分片信息
-	fmt.Printf("[DEBUG] UploadPart: partNum=%d, uploadFileID=%s\n", partNum, uploadFileID)
 	return u.client.UploadPart(ctx, session, partNum, data)
 }
 
@@ -106,9 +104,6 @@ func (u *AppUploader) CommitUpload(ctx context.Context, uploadFileID string, fil
 	if session == nil {
 		return "", fmt.Errorf("session 未初始化")
 	}
-	// 调试：打印 MD5 信息
-	fmt.Printf("[DEBUG] CommitUpload: LazyCheck=%v, FileMD5=%s, SliceMD5=%s\n",
-		session.LazyCheck, session.FileMD5, session.SliceMD5)
 	// 如果外部传入了 MD5，使用外部的；否则使用 session 内部计算的
 	if fileMD5 != "" {
 		session.FileMD5 = fileMD5
