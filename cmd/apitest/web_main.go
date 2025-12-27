@@ -43,7 +43,7 @@ func (webLogger) Errorf(f string, a ...any) { fmt.Printf("[ERROR] "+f+"\n", a...
 // webMemStore 复用泛型内存存储
 type webMemStore = MemoryStore[*auth.Session]
 
-func mains() {
+func main() {
 	reader := bufio.NewReader(os.Stdin)
 	log := webLogger{}
 

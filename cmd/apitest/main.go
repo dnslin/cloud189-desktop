@@ -91,7 +91,7 @@ func cloneSession[T any](session T) T {
 	return any(s.Clone()).(T)
 }
 
-func main() {
+func mains() {
 	reader := bufio.NewReader(os.Stdin)
 	log := logger{}
 
