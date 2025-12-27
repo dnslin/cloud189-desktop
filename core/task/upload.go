@@ -1,15 +1,14 @@
 package task
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"time"
 
+	"github.com/dnslin/cloud189-desktop/core/cloud189"
 	"github.com/dnslin/cloud189-desktop/core/store"
 )
-
-// DefaultSliceSize 默认分片大小（10MB）。
-const DefaultSliceSize = 10 * 1024 * 1024
 
 // UploadMode 上传模式。
 type UploadMode int
@@ -148,7 +147,7 @@ func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, 
 	}
 
 	// 计算分片数（固定 10MB 分片）
-	sliceSize := int64(DefaultSliceSize)
+	sliceSize := int64(cloud189.DefaultSliceSize)
 	totalParts := (fileSize + sliceSize - 1) / sliceSize
 	if totalParts == 0 {
 		totalParts = 1
@@ -203,7 +202,7 @@ func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, 
 		}
 
 		// 上传分片
-		partReader := &bytesReader{data: partData[:n]}
+		partReader := bytes.NewReader(partData[:n])
 		if err := uploader.UploadPart(ctx, uploadFileID, int(partNum), partReader); err != nil {
 			task.SetError(err)
 			m.notifyProgress(task)
@@ -246,19 +245,4 @@ func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, 
 
 	task.SetStatus(TaskStatusCompleted)
 	m.notifyProgress(task)
-}
-
-// bytesReader 简单的字节读取器。
-type bytesReader struct {
-	data []byte
-	pos  int
-}
-
-func (r *bytesReader) Read(p []byte) (n int, err error) {
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
 }

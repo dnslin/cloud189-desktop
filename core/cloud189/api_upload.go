@@ -85,8 +85,14 @@ func (c *Client) InitUpload(ctx context.Context, parentID, filename string, size
 	return session, nil
 }
 
-// UploadPart 上传单个分片。
-func (c *Client) UploadPart(ctx context.Context, session *UploadSession, partNum int, data io.Reader) error {
+// uploadPartInternal 抽取分片上传公共流程，外部注入获取上传地址逻辑。
+func (c *Client) uploadPartInternal(
+	ctx context.Context,
+	session *UploadSession,
+	partNum int,
+	data io.Reader,
+	fetchUploadURLs func(context.Context, url.Values, *uploadURLsResponse) error,
+) error {
 	if session == nil {
 		return WrapCloudError(ErrCodeInvalidRequest, "上传会话未初始化", errors.New("cloud189: UploadSession 为空"))
 	}
@@ -112,7 +118,7 @@ func (c *Client) UploadPart(ctx context.Context, session *UploadSession, partNum
 	params.Set("uploadFileId", session.UploadFileID)
 
 	var rsp uploadURLsResponse
-	if err := c.AppUpload(ctx, "/person/getMultiUploadUrls", params, &rsp); err != nil {
+	if err := fetchUploadURLs(ctx, params, &rsp); err != nil {
 		return err
 	}
 	key := fmt.Sprintf("partNumber_%d", partNum)
@@ -152,6 +158,13 @@ func (c *Client) UploadPart(ctx context.Context, session *UploadSession, partNum
 	return nil
 }
 
+// UploadPart 上传单个分片。
+func (c *Client) UploadPart(ctx context.Context, session *UploadSession, partNum int, data io.Reader) error {
+	return c.uploadPartInternal(ctx, session, partNum, data, func(ctx context.Context, params url.Values, rsp *uploadURLsResponse) error {
+		return c.AppUpload(ctx, "/person/getMultiUploadUrls", params, rsp)
+	})
+}
+
 // CommitUpload 提交上传，返回文件信息。
 func (c *Client) CommitUpload(ctx context.Context, session *UploadSession) (*FileInfo, error) {
 	if session == nil {
@@ -186,8 +199,15 @@ func (c *Client) CommitUpload(ctx context.Context, session *UploadSession) (*Fil
 	}, nil
 }
 
-// SimpleUpload 小文件一次性上传。
-func (c *Client) SimpleUpload(ctx context.Context, parentID, filename string, data io.Reader) (*FileInfo, error) {
+// simpleUploadInternal 抽取一次性上传公共流程，外部注入初始化、分片上传与提交逻辑。
+func (c *Client) simpleUploadInternal(
+	ctx context.Context,
+	parentID, filename string,
+	data io.Reader,
+	initFn func(context.Context, string, string, int64) (*UploadSession, error),
+	uploadPartFn func(context.Context, *UploadSession, int, io.Reader) error,
+	commitFn func(context.Context, *UploadSession) (*FileInfo, error),
+) (*FileInfo, error) {
 	if data == nil {
 		return nil, WrapCloudError(ErrCodeInvalidRequest, "上传数据为空", errors.New("cloud189: 上传数据为空"))
 	}
@@ -196,12 +216,12 @@ func (c *Client) SimpleUpload(ctx context.Context, parentID, filename string, da
 		return nil, WrapCloudError(ErrCodeUnknown, "读取上传数据失败", err)
 	}
 	size := int64(len(buf))
-	session, err := c.InitUpload(ctx, parentID, filename, size)
+	session, err := initFn(ctx, parentID, filename, size)
 	if err != nil {
 		return nil, err
 	}
 	if !session.Exists() {
-		if err := c.UploadPart(ctx, session, 1, bytes.NewReader(buf)); err != nil {
+		if err := uploadPartFn(ctx, session, 1, bytes.NewReader(buf)); err != nil {
 			return nil, err
 		}
 	}
@@ -211,7 +231,12 @@ func (c *Client) SimpleUpload(ctx context.Context, parentID, filename string, da
 	session.FileMD5 = hex.EncodeToString(sum[:])
 	session.SliceMD5 = session.FileMD5
 	session.recordHashes(1, sum[:], nil)
-	return c.CommitUpload(ctx, session)
+	return commitFn(ctx, session)
+}
+
+// SimpleUpload 小文件一次性上传。
+func (c *Client) SimpleUpload(ctx context.Context, parentID, filename string, data io.Reader) (*FileInfo, error) {
+	return c.simpleUploadInternal(ctx, parentID, filename, data, c.InitUpload, c.UploadPart, c.CommitUpload)
 }
 
 // WebInitUpload 使用 Web 签名初始化分片上传会话。
@@ -255,69 +280,9 @@ func (c *Client) WebInitUpload(ctx context.Context, parentID, filename string, s
 
 // WebUploadPart 使用 Web 签名上传单个分片。
 func (c *Client) WebUploadPart(ctx context.Context, session *UploadSession, partNum int, data io.Reader, rsaKey *WebRSA) error {
-	if session == nil {
-		return WrapCloudError(ErrCodeInvalidRequest, "上传会话未初始化", errors.New("cloud189: UploadSession 为空"))
-	}
-	if partNum <= 0 {
-		return WrapCloudError(ErrCodeInvalidRequest, "分片序号无效", errors.New("cloud189: 分片序号必须大于 0"))
-	}
-	if data == nil {
-		return WrapCloudError(ErrCodeInvalidRequest, "分片数据为空", errors.New("cloud189: 分片数据为空"))
-	}
-	if session.UploadFileID == "" {
-		return WrapCloudError(ErrCodeInvalidRequest, "uploadFileId 为空", errors.New("cloud189: uploadFileId 未初始化"))
-	}
-	buf, err := io.ReadAll(data)
-	if err != nil {
-		return WrapCloudError(ErrCodeUnknown, "读取分片数据失败", err)
-	}
-	sum := md5.Sum(buf)
-	partName := base64.StdEncoding.EncodeToString(sum[:])
-	partInfo := fmt.Sprintf("%d-%s", partNum, partName)
-
-	params := url.Values{}
-	params.Set("partInfo", partInfo)
-	params.Set("uploadFileId", session.UploadFileID)
-
-	var rsp uploadURLsResponse
-	if err := c.WebUpload(ctx, "/person/getMultiUploadUrls", params, rsaKey, &rsp); err != nil {
-		return err
-	}
-	key := fmt.Sprintf("partNumber_%d", partNum)
-	urlInfo, ok := rsp.UploadURLs[key]
-	if !ok {
-		return WrapCloudError(ErrCodeInvalidRequest, "上传地址缺失", errors.New("cloud189: 未返回分片上传地址"))
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, urlInfo.RequestURL, bytes.NewReader(buf))
-	if err != nil {
-		return WrapCloudError(ErrCodeInvalidRequest, "构建上传请求失败", err)
-	}
-	for _, h := range strings.Split(urlInfo.RequestHeader, "&") {
-		if h == "" {
-			continue
-		}
-		kv := strings.SplitN(h, "=", 2)
-		if len(kv) == 2 {
-			req.Header.Set(kv[0], kv[1])
-		}
-	}
-
-	httpClient := http.DefaultClient
-	if c != nil && c.http != nil && c.http.HTTP != nil {
-		httpClient = c.http.HTTP
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return WrapCloudError(ErrCodeUnknown, "上传分片失败", err)
-	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return WrapCloudError(ErrCodeServer, fmt.Sprintf("上传失败，状态码=%d", resp.StatusCode), errors.New(resp.Status))
-	}
-	session.recordHashes(partNum, sum[:], buf)
-	return nil
+	return c.uploadPartInternal(ctx, session, partNum, data, func(ctx context.Context, params url.Values, rsp *uploadURLsResponse) error {
+		return c.WebUpload(ctx, "/person/getMultiUploadUrls", params, rsaKey, rsp)
+	})
 }
 
 // WebCommitUpload 使用 Web 签名提交上传。
@@ -356,30 +321,21 @@ func (c *Client) WebCommitUpload(ctx context.Context, session *UploadSession, rs
 
 // WebSimpleUpload Web 端小文件一次性上传。
 func (c *Client) WebSimpleUpload(ctx context.Context, parentID, filename string, data io.Reader, rsaKey *WebRSA) (*FileInfo, error) {
-	if data == nil {
-		return nil, WrapCloudError(ErrCodeInvalidRequest, "上传数据为空", errors.New("cloud189: 上传数据为空"))
-	}
-	buf, err := io.ReadAll(data)
-	if err != nil {
-		return nil, WrapCloudError(ErrCodeUnknown, "读取上传数据失败", err)
-	}
-	size := int64(len(buf))
-	session, err := c.WebInitUpload(ctx, parentID, filename, size, rsaKey)
-	if err != nil {
-		return nil, err
-	}
-	if !session.Exists() {
-		if err := c.WebUploadPart(ctx, session, 1, bytes.NewReader(buf), rsaKey); err != nil {
-			return nil, err
-		}
-	}
-	sum := md5.Sum(buf)
-	session.fileMD5 = md5.New()
-	session.fileMD5.Write(buf)
-	session.FileMD5 = hex.EncodeToString(sum[:])
-	session.SliceMD5 = session.FileMD5
-	session.recordHashes(1, sum[:], nil)
-	return c.WebCommitUpload(ctx, session, rsaKey)
+	return c.simpleUploadInternal(
+		ctx,
+		parentID,
+		filename,
+		data,
+		func(ctx context.Context, parentID, filename string, size int64) (*UploadSession, error) {
+			return c.WebInitUpload(ctx, parentID, filename, size, rsaKey)
+		},
+		func(ctx context.Context, session *UploadSession, partNum int, data io.Reader) error {
+			return c.WebUploadPart(ctx, session, partNum, data, rsaKey)
+		},
+		func(ctx context.Context, session *UploadSession) (*FileInfo, error) {
+			return c.WebCommitUpload(ctx, session, rsaKey)
+		},
+	)
 }
 
 func (s *UploadSession) recordHashes(partNum int, sum []byte, data []byte) {

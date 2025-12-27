@@ -213,24 +213,38 @@ func (m *AuthManager) saveSnapshot(accountID string, session *Session) error {
 type storeProvider struct {
 	manager   *AuthManager
 	accountID string
+	cached    *Session     // 缓存的会话快照
+	once      sync.Once    // 确保只加载一次
+	cacheMu   sync.RWMutex // 缓存读写锁，保证并发安全
 }
 
 func (p *storeProvider) session() *Session {
-	if p == nil || p.manager == nil {
+	if p == nil {
 		return nil
 	}
-	session, err := p.manager.snapshot(p.accountID)
-	if err != nil {
-		return nil
-	}
-	return session
+	p.once.Do(func() {
+		if p.manager != nil {
+			p.cacheMu.Lock()
+			p.cached, _ = p.manager.snapshot(p.accountID)
+			p.cacheMu.Unlock()
+		}
+	})
+	p.cacheMu.RLock()
+	defer p.cacheMu.RUnlock()
+	return p.cached
 }
 
 func (p *storeProvider) save(session *Session) error {
 	if p == nil || p.manager == nil {
 		return coreerrors.Wrap(coreerrors.ErrCodeInvalidConfig, "auth: 会话存储未初始化", ErrSessionStoreNil)
 	}
-	return p.manager.saveSnapshot(p.accountID, session)
+	if err := p.manager.saveSnapshot(p.accountID, session); err != nil {
+		return err
+	}
+	p.cacheMu.Lock()
+	p.cached = session
+	p.cacheMu.Unlock()
+	return nil
 }
 
 func (p *storeProvider) GetSessionKey() string {

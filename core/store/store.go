@@ -7,17 +7,17 @@ type SessionStore[T any] interface {
 	ClearSession() error
 }
 
-// TokenStore 抽象 token/refresh token/cookie 的持久化，由业务方约定结构体。
-type TokenStore interface {
-	SaveTokens(tokens any) error
-	LoadTokens() (any, error)
+// TokenStore 抽象 token/refresh token/cookie 的持久化。
+type TokenStore[T any] interface {
+	SaveTokens(tokens T) error
+	LoadTokens() (T, error)
 	ClearTokens() error
 }
 
-// ConfigStore 抽象用户偏好或客户端配置的存储，由业务方约定结构体。
-type ConfigStore interface {
-	SaveConfig(cfg any) error
-	LoadConfig() (any, error)
+// ConfigStore 抽象用户偏好或客户端配置的存储。
+type ConfigStore[T any] interface {
+	SaveConfig(cfg T) error
+	LoadConfig() (T, error)
 	ClearConfig() error
 }
 
