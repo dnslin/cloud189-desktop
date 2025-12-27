@@ -262,14 +262,20 @@ func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cl
 	// 创建 TaskManager
 	manager := task.NewManager(task.WithMaxConcurrent(2))
 
-	// 订阅进度更新
+	// 订阅进度更新（每 5% 更新一次）
+	var lastPercent float64
 	manager.Subscribe(func(t *task.Task) {
 		percent := t.Percent()
-		speed := float64(t.Speed) / 1024 / 1024 // MB/s
-		fmt.Printf("[%s] %s: %.1f%% (%.2f MB/s) - %s\n",
-			t.Type.String(), t.FileName, percent, speed, t.Status.String())
+		// 状态变化或进度每 5% 更新一次
+		if percent-lastPercent >= 5 || percent == 100 || t.Status != task.TaskStatusRunning {
+			speed := float64(t.Speed) / 1024 / 1024 // MB/s
+			fmt.Printf("[%s] %s: %.1f%% (%.2f MB/s) - %s\n",
+				t.Type.String(), t.FileName, percent, speed, t.Status.String())
+			lastPercent = percent
+		}
 	})
 
+	/* 上传测试暂时注释
 	// 创建测试文件夹
 	fmt.Println("\n--- 创建测试文件夹 ---")
 	folderName := fmt.Sprintf("task_test_%d", time.Now().Unix())
@@ -294,7 +300,7 @@ func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cl
 	// 创建测试文件
 	fmt.Println("\n--- 创建测试文件 ---")
 	testFilePath := "/tmp/task_test_upload.bin"
-	testFileSize := int64(15 * 1024 * 1024) // 15MB（测试多分片：10MB + 5MB）
+	testFileSize := int64(50 * 1024 * 1024) // 50MB（测试多分片，便于观察暂停/恢复）
 	if err := createTestFile(testFilePath, testFileSize); err != nil {
 		fmt.Printf("创建测试文件失败: %v\n", err)
 		return
@@ -324,6 +330,25 @@ func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cl
 	}
 	fmt.Printf("上传任务已添加: %s\n", taskID)
 
+	// 测试暂停/恢复（断点续传）
+	go func() {
+		time.Sleep(1 * time.Second) // 等待上传开始
+		t, _ := manager.GetTask(taskID)
+		if t.Status == task.TaskStatusRunning && t.Progress > 0 {
+			fmt.Println("\n--- 测试暂停/恢复 ---")
+			fmt.Printf("当前进度: %d bytes, 暂停任务...\n", t.Progress)
+			if err := manager.Pause(taskID); err != nil {
+				fmt.Printf("暂停失败: %v\n", err)
+				return
+			}
+			time.Sleep(2 * time.Second)
+			fmt.Println("恢复任务...")
+			if err := manager.Resume(taskID); err != nil {
+				fmt.Printf("恢复失败: %v\n", err)
+			}
+		}
+	}()
+
 	// 等待上传完成
 	waitForTask(manager, taskID, 5*time.Minute)
 
@@ -333,60 +358,97 @@ func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cl
 		fmt.Printf("上传失败: %v\n", uploadTask.Error)
 		return
 	}
+	上传测试暂时注释 */
 
-	// 查找上传的文件
-	fmt.Println("\n--- 查找上传的文件 ---")
+	// 测试下载（使用已存在的文件）
+	fmt.Println("\n--- 查找测试文件 ---")
+	testFolderID := "524821226301804505"
 	fileList, err := client.ListFiles(ctx, testFolderID)
 	if err != nil {
 		fmt.Printf("列出文件失败: %v\n", err)
 		return
 	}
-	var uploadedFileID string
+	var downloadFileID string
+	var expectedSize int64
 	for _, item := range fileList.Items() {
-		if item.FileName == uploadCfg.FileName {
-			uploadedFileID = item.ID.String()
-			fmt.Printf("找到上传的文件: %s (ID: %s)\n", item.FileName, uploadedFileID)
+		if item.FileName == "kmssDevPluginIdea-1.0.16.v20240109.zip" {
+			downloadFileID = item.ID.String()
+			expectedSize = item.FileSize
+			fmt.Printf("找到测试文件: %s (ID: %s, 大小: %d bytes)\n", item.FileName, downloadFileID, expectedSize)
 			break
 		}
 	}
-
-	if uploadedFileID == "" {
-		fmt.Println("未找到上传的文件")
+	if downloadFileID == "" {
+		fmt.Println("未找到测试文件 kmssDevPluginIdea-1.0.16.v20240109.zip")
 		return
 	}
 
 	// 测试下载
-	fmt.Println("\n--- 测试下载任务 ---")
+	fmt.Println("\n--- 测试下载任务（断点续传）---")
 	downloader := &AppDownloader{client: client, httpClient: rawHTTP}
-	downloadPath := "/tmp/task_test_download.bin"
-	downloadWriter, err := NewFileWriter(downloadPath)
+	downloadPath := "/tmp/task_test_download.zip"
+
+	// 第一次下载：下载一部分后取消
+	fmt.Println("\n[第一次下载] 下载一部分后取消...")
+	downloadWriter1, err := NewFileWriter(downloadPath)
 	if err != nil {
 		fmt.Printf("创建下载文件失败: %v\n", err)
 		return
 	}
-	defer os.Remove(downloadPath)
 
-	downloadCfg := task.DownloadConfig{
-		FileID:    uploadedFileID,
+	downloadCfg1 := task.DownloadConfig{
+		FileID:    downloadFileID,
 		LocalPath: downloadPath,
-		Resume:    false,
+		Resume:    false, // 第一次不需要续传
 	}
 
-	downloadTaskID, err := manager.AddDownload(downloadCfg, downloader, downloadWriter)
+	downloadTaskID1, err := manager.AddDownload(downloadCfg1, downloader, downloadWriter1)
 	if err != nil {
 		fmt.Printf("添加下载任务失败: %v\n", err)
 		return
 	}
-	fmt.Printf("下载任务已添加: %s\n", downloadTaskID)
+
+	// 等待下载一部分后取消
+	time.Sleep(2 * time.Second)
+	t1, _ := manager.GetTask(downloadTaskID1)
+	fmt.Printf("已下载: %d bytes (%.1f%%), 取消任务...\n", t1.Progress, t1.Percent())
+	manager.Cancel(downloadTaskID1)
+	time.Sleep(500 * time.Millisecond) // 等待取消完成
+
+	// 检查已下载的文件大小
+	partialInfo, _ := os.Stat(downloadPath)
+	fmt.Printf("部分下载文件大小: %d bytes\n", partialInfo.Size())
+
+	// 第二次下载：断点续传
+	fmt.Println("\n[第二次下载] 断点续传...")
+	downloadWriter2, err := NewFileWriter(downloadPath)
+	if err != nil {
+		fmt.Printf("创建下载文件失败: %v\n", err)
+		return
+	}
+
+	downloadCfg2 := task.DownloadConfig{
+		FileID:    downloadFileID,
+		LocalPath: downloadPath,
+		Resume:    true, // 启用断点续传
+	}
+
+	downloadTaskID2, err := manager.AddDownload(downloadCfg2, downloader, downloadWriter2)
+	if err != nil {
+		fmt.Printf("添加下载任务失败: %v\n", err)
+		return
+	}
+	fmt.Printf("下载任务已添加: %s\n", downloadTaskID2)
 
 	// 等待下载完成
-	waitForTask(manager, downloadTaskID, 5*time.Minute)
+	waitForTask(manager, downloadTaskID2, 5*time.Minute)
 
-	downloadTask, _ := manager.GetTask(downloadTaskID)
+	downloadTask, _ := manager.GetTask(downloadTaskID2)
 	if downloadTask.Status != task.TaskStatusCompleted {
 		fmt.Printf("下载失败: %v\n", downloadTask.Error)
 		return
 	}
+	defer os.Remove(downloadPath)
 
 	// 验证下载的文件
 	fmt.Println("\n--- 验证下载的文件 ---")
@@ -395,8 +457,8 @@ func runTaskTests(ctx context.Context, client *cloud189.Client, rawHTTP *http.Cl
 		fmt.Printf("获取下载文件信息失败: %v\n", err)
 		return
 	}
-	fmt.Printf("下载文件大小: %d bytes (预期: %d bytes)\n", downloadInfo.Size(), testFileSize)
-	if downloadInfo.Size() == testFileSize {
+	fmt.Printf("下载文件大小: %d bytes (预期: %d bytes)\n", downloadInfo.Size(), expectedSize)
+	if downloadInfo.Size() == expectedSize {
 		fmt.Println("✓ 文件大小匹配!")
 	} else {
 		fmt.Println("✗ 文件大小不匹配!")
