@@ -9,15 +9,55 @@ import (
 	"github.com/dnslin/cloud189-desktop/core/httpclient"
 )
 
+var (
+	errSessionSourceNil = errors.New("cloud189: SessionSource 未设置")
+	errAuthManagerNil   = errors.New("cloud189: AuthManager 未设置")
+)
+
+// SessionSource 会话来源接口
+type SessionSource interface {
+	GetSession(ctx context.Context, accountID string) (auth.SessionProvider, error)
+	RefreshSession(ctx context.Context, accountID string) error
+}
+
+// AuthManagerAdapter 适配 AuthManager 为 SessionSource。
+type AuthManagerAdapter struct {
+	authManager *auth.AuthManager
+}
+
+// NewAuthManagerAdapter 创建基于 AuthManager 的 SessionSource。
+func NewAuthManagerAdapter(authManager *auth.AuthManager) *AuthManagerAdapter {
+	return &AuthManagerAdapter{authManager: authManager}
+}
+
+// GetSession 返回指定账号的 SessionProvider。
+func (a *AuthManagerAdapter) GetSession(ctx context.Context, accountID string) (auth.SessionProvider, error) {
+	if a == nil || a.authManager == nil {
+		return nil, errAuthManagerNil
+	}
+	if _, err := a.authManager.GetAccount(ctx, accountID); err != nil {
+		return nil, err
+	}
+	return a.authManager.SessionProvider(accountID)
+}
+
+// RefreshSession 刷新指定账号的会话。
+func (a *AuthManagerAdapter) RefreshSession(ctx context.Context, accountID string) error {
+	if a == nil || a.authManager == nil {
+		return errAuthManagerNil
+	}
+	return a.authManager.RefreshAccount(ctx, accountID)
+}
+
 // Client 扁平 API 封装，负责会话刷新与账号切换。
 type Client struct {
-	authManager *auth.AuthManager
-	accountID   string
-	http        *httpclient.Client
-	logger      httpclient.Logger
-	appBaseURL  string
-	webBaseURL  string
-	uploadBase  string
+	sessionSource SessionSource
+	accountID     string
+	http          *httpclient.Client
+	logger        httpclient.Logger
+	appBaseURL    string
+	webBaseURL    string
+	uploadBase    string
 }
 
 // Option 自定义客户端配置。
@@ -60,14 +100,14 @@ func WithBaseURLs(app, web, upload string) Option {
 }
 
 // NewClient 创建默认客户端。
-func NewClient(authManager *auth.AuthManager, opts ...Option) *Client {
+func NewClient(sessionSource SessionSource, opts ...Option) *Client {
 	cli := &Client{
-		authManager: authManager,
-		http:        httpclient.NewClient(),
-		logger:      httpclient.NopLogger{},
-		appBaseURL:  DefaultAppBaseURL,
-		webBaseURL:  DefaultWebBaseURL,
-		uploadBase:  DefaultUploadBaseURL,
+		sessionSource: sessionSource,
+		http:          httpclient.NewClient(),
+		logger:        httpclient.NopLogger{},
+		appBaseURL:    DefaultAppBaseURL,
+		webBaseURL:    DefaultWebBaseURL,
+		uploadBase:    DefaultUploadBaseURL,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -83,6 +123,11 @@ func NewClient(authManager *auth.AuthManager, opts ...Option) *Client {
 	cli.http.Logger = cli.logger
 	cli.configureRetry()
 	return cli
+}
+
+// NewClientWithAuthManager 兼容构造函数，直接使用 AuthManager。
+func NewClientWithAuthManager(authManager *auth.AuthManager, opts ...Option) *Client {
+	return NewClient(NewAuthManagerAdapter(authManager), opts...)
 }
 
 // WithAccount 切换当前账号 ID。
@@ -146,13 +191,10 @@ func (c *Client) prepareWebSigner(ctx context.Context) (*WebSigner, error) {
 }
 
 func (c *Client) prepareSessionProvider(ctx context.Context) (auth.SessionProvider, error) {
-	if c.authManager == nil {
-		return nil, WrapCloudError(ErrCodeInvalidToken, "认证管理器未配置", errors.New("cloud189: AuthManager 未设置"))
+	if c.sessionSource == nil {
+		return nil, WrapCloudError(ErrCodeInvalidToken, "会话来源未配置", errSessionSourceNil)
 	}
-	if _, err := c.authManager.GetAccount(ctx, c.accountID); err != nil {
-		return nil, ensureCloudError(ErrCodeInvalidToken, "获取会话失败", err)
-	}
-	provider, err := c.authManager.SessionProvider(c.accountID)
+	provider, err := c.sessionSource.GetSession(ctx, c.accountID)
 	if err != nil {
 		return nil, ensureCloudError(ErrCodeInvalidToken, "获取会话失败", err)
 	}
@@ -160,10 +202,10 @@ func (c *Client) prepareSessionProvider(ctx context.Context) (auth.SessionProvid
 }
 
 func (c *Client) refreshCurrent(ctx context.Context) error {
-	if c.authManager == nil {
-		return WrapCloudError(ErrCodeInvalidToken, "认证管理器未配置", errors.New("cloud189: AuthManager 未设置"))
+	if c.sessionSource == nil {
+		return WrapCloudError(ErrCodeInvalidToken, "会话来源未配置", errSessionSourceNil)
 	}
-	if err := c.authManager.RefreshAccount(ctx, c.accountID); err != nil {
+	if err := c.sessionSource.RefreshSession(ctx, c.accountID); err != nil {
 		return WrapCloudError(ErrCodeInvalidToken, "凭证刷新失败", err)
 	}
 	return nil
@@ -184,16 +226,11 @@ func (c *Client) useMiddlewares(req *http.Request, out any, mw ...httpclient.Mid
 	if c.http == nil {
 		return errors.New("cloud189: httpclient 未初始化")
 	}
-	// 先应用临时中间件到请求
-	for _, m := range mw {
-		if m != nil {
-			if err := m(req); err != nil {
-				return err
-			}
-		}
-	}
-	// 使用原有的 http client 执行请求
-	return c.http.Do(req, out)
+	prepare := append(httpclient.PrepareChain{}, mw...)
+	prepare = append(prepare, c.http.Prepare...)
+	httpClient := *c.http
+	httpClient.Prepare = prepare
+	return httpClient.Do(req, out)
 }
 
 func (c *Client) doRequest(ctx context.Context, method, base, path string, params map[string]string, out any, middlewares ...httpclient.Middleware) error {

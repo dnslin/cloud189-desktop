@@ -329,7 +329,7 @@ func main() {
 	})
 
 	// 5. 创建 Client
-	client := cloud189.NewClient(authMgr,
+	client := cloud189.NewClientWithAuthManager(authMgr,
 		cloud189.WithHTTPClient(httpClient),
 		cloud189.WithLogger(log),
 	).WithAccount("main")

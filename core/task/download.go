@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 )
 
 // DownloadMode 下载模式。
@@ -140,6 +139,24 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 		m.notifyProgress(task)
 		return
 	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if startOffset > 0 {
+			if _, err := writer.Seek(0, io.SeekStart); err != nil {
+				task.SetError(err)
+				m.notifyProgress(task)
+				return
+			}
+			startOffset = 0
+			task.SetProgress(0)
+		}
+	case http.StatusPartialContent:
+		// 支持 Range 响应
+	default:
+		task.SetError(&DownloadError{StatusCode: resp.StatusCode, Status: resp.Status})
+		m.notifyProgress(task)
+		return
+	}
 
 	// 写入数据
 	buf := make([]byte, 32*1024) // 32KB 缓冲区
@@ -151,9 +168,11 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 		if status == TaskStatusCanceled {
 			return
 		}
-		for status == TaskStatusPaused {
-			time.Sleep(100 * time.Millisecond)
-			status = task.GetStatus()
+		if status == TaskStatusPaused {
+			status = task.WaitIfPaused()
+			if status == TaskStatusCanceled {
+				return
+			}
 		}
 
 		n, readErr := resp.Body.Read(buf)

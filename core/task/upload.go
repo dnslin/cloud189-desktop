@@ -162,6 +162,12 @@ func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, 
 		m.notifyProgress(task)
 	}
 
+	bufferSize := sliceSize
+	if fileSize < bufferSize {
+		bufferSize = fileSize
+	}
+	partBuffer := make([]byte, int(bufferSize)) // 复用分片缓冲区减少分配
+
 	// 上传分片
 	for partNum := startPart; partNum <= totalParts; partNum++ {
 		// 检查任务状态
@@ -169,10 +175,12 @@ func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, 
 		if status == TaskStatusCanceled {
 			return
 		}
-		for status == TaskStatusPaused {
+		if status == TaskStatusPaused {
 			// 暂停时等待恢复
-			time.Sleep(100 * time.Millisecond)
-			status = task.GetStatus()
+			status = task.WaitIfPaused()
+			if status == TaskStatusCanceled {
+				return
+			}
 		}
 
 		// 定位到分片起始位置
@@ -190,8 +198,8 @@ func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, 
 		}
 
 		// 读取分片数据
-		partData := make([]byte, partSize)
-		n, err := io.ReadFull(reader, partData)
+		readLen := int(partSize)
+		n, err := io.ReadFull(reader, partBuffer[:readLen])
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			task.SetError(err)
 			m.notifyProgress(task)
@@ -202,7 +210,7 @@ func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, 
 		}
 
 		// 上传分片
-		partReader := bytes.NewReader(partData[:n])
+		partReader := bytes.NewReader(partBuffer[:n])
 		if err := uploader.UploadPart(ctx, uploadFileID, int(partNum), partReader); err != nil {
 			task.SetError(err)
 			m.notifyProgress(task)

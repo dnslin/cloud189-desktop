@@ -131,6 +131,9 @@ func (c *Client) uploadPartInternal(
 	if err != nil {
 		return WrapCloudError(ErrCodeInvalidRequest, "构建上传请求失败", err)
 	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(buf)), nil
+	}
 	for _, h := range strings.Split(urlInfo.RequestHeader, "&") {
 		if h == "" {
 			continue
@@ -141,18 +144,15 @@ func (c *Client) uploadPartInternal(
 		}
 	}
 
-	httpClient := http.DefaultClient
-	if c != nil && c.http != nil && c.http.HTTP != nil {
-		httpClient = c.http.HTTP
+	if c == nil || c.http == nil {
+		return WrapCloudError(ErrCodeInvalidRequest, "客户端未初始化", errors.New("cloud189: httpclient 未配置"))
 	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return WrapCloudError(ErrCodeUnknown, "上传分片失败", err)
-	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return WrapCloudError(ErrCodeServer, fmt.Sprintf("上传失败，状态码=%d", resp.StatusCode), errors.New(resp.Status))
+	if err := c.http.Do(req, nil); err != nil {
+		code := ErrCodeUnknown
+		if status := httpStatusFromErr(err); status >= http.StatusBadRequest {
+			code = ErrCodeServer
+		}
+		return WrapCloudError(code, "上传分片失败", err)
 	}
 	session.recordHashes(partNum, sum[:], buf)
 	return nil

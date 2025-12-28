@@ -70,6 +70,8 @@ func (s TaskStatus) String() string {
 type Task struct {
 	mu sync.RWMutex
 
+	pauseCond *sync.Cond // 暂停条件变量
+
 	// 基本信息
 	ID        string     // 任务唯一标识
 	Type      TaskType   // 任务类型
@@ -99,7 +101,7 @@ type Task struct {
 // NewTask 创建新任务。
 func NewTask(id string, taskType TaskType) *Task {
 	now := time.Now()
-	return &Task{
+	task := &Task{
 		ID:        id,
 		Type:      taskType,
 		Status:    TaskStatusPending,
@@ -107,20 +109,36 @@ func NewTask(id string, taskType TaskType) *Task {
 		UpdatedAt: now,
 		lastTime:  now,
 	}
+	task.pauseCond = sync.NewCond(&task.mu)
+	return task
 }
 
 // SetStatus 设置任务状态。
 func (t *Task) SetStatus(status TaskStatus) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	prevStatus := t.Status
 	t.Status = status
 	t.UpdatedAt = time.Now()
+	if t.pauseCond != nil && prevStatus != status {
+		t.pauseCond.Broadcast()
+	}
 }
 
 // GetStatus 获取任务状态。
 func (t *Task) GetStatus() TaskStatus {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	return t.Status
+}
+
+// WaitIfPaused 若任务处于暂停状态则阻塞等待恢复。
+func (t *Task) WaitIfPaused() TaskStatus {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for t.Status == TaskStatusPaused {
+		t.pauseCond.Wait()
+	}
 	return t.Status
 }
 

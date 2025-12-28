@@ -159,7 +159,11 @@ func (c *Client) Do(req *http.Request, out any) error {
 		}
 		attempt++
 		if wait > 0 {
-			time.Sleep(wait)
+			select {
+			case <-req.Context().Done():
+				return req.Context().Err()
+			case <-time.After(wait):
+			}
 		}
 	}
 }
@@ -182,7 +186,7 @@ func (c *Client) execute(req *http.Request, out any) (*http.Response, error) {
 	if out == nil {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode >= http.StatusInternalServerError {
+		if resp.StatusCode >= http.StatusBadRequest {
 			return resp, statusToErr(resp.StatusCode)
 		}
 		return resp, nil
