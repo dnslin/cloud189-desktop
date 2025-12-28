@@ -36,7 +36,8 @@ core/               # 纯业务库（禁止引用 cmd/app/UI 框架）
 ├── errors/         # 结构化错误（code/op/cause）
 ├── httpclient/     # HTTP 客户端封装（重试/限流/中间件）
 ├── model/          # 领域模型（File/User）
-└── store/          # 存储接口定义（SessionStore/TokenStore/ConfigStore）
+├── store/          # 存储接口定义（SessionStore/TokenStore/ConfigStore）
+└── task/           # 上传/下载任务管理（暂停/恢复/进度）
 
 cmd/
 └── apitest/        # 调试入口
@@ -44,11 +45,29 @@ cmd/
 cloud189-example/   # 参考项目（只读不写）
 ```
 
+## Key Patterns
+
+**会话管理流程**：
+1. `AuthManager` 管理多账号会话，通过 `SessionStore` 接口持久化
+2. `Client` 通过 `SessionSource` 接口获取会话，支持自动刷新
+3. `AuthManagerAdapter` 适配 `AuthManager` 为 `SessionSource`
+
+**HTTP 请求链**：
+`Client.AppGet/WebGet` → `httpclient.Client.Do` → `Middleware` → `RetryPolicy` → `RateLimiter`
+
+**存储接口**（泛型设计，实现由上层注入）：
+- `SessionStore[T]` - 会话存储
+- `TokenStore[T]` - Token 持久化
+- `ConfigStore[T]` - 配置存储
+- `UploadStateStore` - 上传断点续传
+
 ## Key Files
 
 - `core/auth/manager.go` - 多账号会话管理器 AuthManager
 - `core/cloud189/client.go` - API 客户端（会话刷新/账号切换）
 - `core/store/store.go` - 存储接口定义
+- `core/task/task.go` - 任务基础结构与状态机
+- `core/httpclient/client.go` - HTTP 客户端（重试/中间件）
 
 ## Critical Constraints
 
@@ -56,7 +75,7 @@ cloud189-example/   # 参考项目（只读不写）
 
 1. 无 UI 依赖（bubbletea/wails/前端库均禁止）
 2. 无持久化副作用（不直接读写文件/数据库）
-3. 无输出副作用（不直接 fmt.Println，日志通过注入）
+3. 无输出副作用（不直接 fmt.Println，日志通过 `httpclient.Logger` 接口注入）
 
 **依赖方向**：
 
