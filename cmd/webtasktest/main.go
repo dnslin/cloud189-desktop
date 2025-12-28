@@ -211,7 +211,8 @@ func (w *FileWriter) Write(p []byte) (int, error) { return w.file.Write(p) }
 func (w *FileWriter) Seek(offset int64, whence int) (int64, error) {
 	return w.file.Seek(offset, whence)
 }
-func (w *FileWriter) Close() error { return w.file.Close() }
+func (w *FileWriter) Close() error    { return w.file.Close() }
+func (w *FileWriter) Truncate(size int64) error { return w.file.Truncate(size) }
 
 func main() {
 	fmt.Println("=== Web API Task 模块集成测试 ===")

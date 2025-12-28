@@ -2,6 +2,8 @@ package task
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -34,13 +36,16 @@ type DownloadWriter interface {
 	io.Writer
 	io.Seeker
 	io.Closer
+	// Truncate 截断文件到指定大小（可选实现）。
+	Truncate(size int64) error
 }
 
 // DownloadConfig 下载配置。
 type DownloadConfig struct {
-	FileID    string // 云端文件 ID
-	LocalPath string // 本地保存路径
-	Resume    bool   // 是否断点续传
+	FileID    string          // 云端文件 ID
+	LocalPath string          // 本地保存路径
+	Resume    bool            // 是否断点续传
+	Context   context.Context // 可选，外部上下文
 }
 
 // AddDownload 添加下载任务。
@@ -55,7 +60,11 @@ func (m *Manager) AddDownload(cfg DownloadConfig, downloader Downloader, writer 
 
 // runDownload 执行下载任务。
 func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloader, writer DownloadWriter) {
-	ctx, cancel := context.WithCancel(context.Background())
+	parentCtx := cfg.Context
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
 	m.registerCancel(task.ID, cancel)
 	defer m.unregisterCancel(task.ID)
 	defer writer.Close()
@@ -76,6 +85,20 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 	task.SetStatus(TaskStatusRunning)
 	m.notifyProgress(task)
 
+	recordWarning := func(warn error) {
+		if warn == nil {
+			return
+		}
+		task.mu.Lock()
+		prevErr := task.Error
+		task.Error = warn
+		task.mu.Unlock()
+		m.notifyProgress(task)
+		task.mu.Lock()
+		task.Error = prevErr
+		task.mu.Unlock()
+	}
+
 	// 获取文件信息
 	fileName, fileSize, err := downloader.GetFileInfo(ctx, cfg.FileID)
 	if err != nil {
@@ -83,8 +106,10 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 		m.notifyProgress(task)
 		return
 	}
+	task.mu.Lock()
 	task.FileName = fileName
 	task.Total = fileSize
+	task.mu.Unlock()
 
 	// 获取下载链接
 	downloadURL, err := downloader.GetDownloadURL(ctx, cfg.FileID)
@@ -142,6 +167,16 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 	switch resp.StatusCode {
 	case http.StatusOK:
 		if startOffset > 0 {
+			if err := writer.Truncate(0); err != nil {
+				if errors.Is(err, errors.ErrUnsupported) {
+					// 写入器不支持截断，记录警告但继续下载。
+					recordWarning(fmt.Errorf("下载警告: 写入器不支持截断，可能遗留旧数据: %w", err))
+				} else {
+					task.SetError(err)
+					m.notifyProgress(task)
+					return
+				}
+			}
 			if _, err := writer.Seek(0, io.SeekStart); err != nil {
 				task.SetError(err)
 				m.notifyProgress(task)
@@ -198,6 +233,11 @@ func (m *Manager) runDownload(task *Task, cfg DownloadConfig, downloader Downloa
 		}
 	}
 
+	if downloaded != fileSize {
+		task.SetError(fmt.Errorf("下载完成后大小不一致: 已下载 %d, 期望 %d", downloaded, fileSize))
+		m.notifyProgress(task)
+		return
+	}
 	task.SetStatus(TaskStatusCompleted)
 	m.notifyProgress(task)
 }

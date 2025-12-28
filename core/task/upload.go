@@ -58,24 +58,31 @@ type UploadConfig struct {
 	FileName  string // 文件名
 	ParentID  string // 云端父目录 ID
 	FileMD5   string // 文件 MD5（用于断点续传校验，可选）
+	Context   context.Context // 可选，外部上下文
 	// 注意：分片大小固定为 10MB（天翼云服务端要求）
 }
 
 // AddUpload 添加上传任务。
 func (m *Manager) AddUpload(cfg UploadConfig, uploader Uploader, reader UploadReader) (string, error) {
 	task := m.CreateTask(TaskTypeUpload)
+	total := reader.Size()
+	task.mu.Lock()
 	task.LocalPath = cfg.LocalPath
 	task.FileName = cfg.FileName
 	task.ParentID = cfg.ParentID
-	task.Total = reader.Size()
+	task.Total = total
+	task.mu.Unlock()
 
-	go m.runUpload(task, uploader, reader, cfg.FileMD5)
+	go m.runUpload(task, uploader, reader, cfg.FileMD5, cfg.Context)
 	return task.ID, nil
 }
 
 // runUpload 执行上传任务。
-func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, fileMD5 string) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (m *Manager) runUpload(task *Task, uploader Uploader, reader UploadReader, fileMD5 string, parentCtx context.Context) {
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
 	m.registerCancel(task.ID, cancel)
 	defer m.unregisterCancel(task.ID)
 	defer reader.Close()

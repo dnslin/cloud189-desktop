@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	coreerrors "github.com/dnslin/cloud189-desktop/core/errors"
@@ -29,17 +30,19 @@ type AccountSession struct {
 
 // AuthManager 负责多账号的会话管理与自动刷新。
 type AuthManager struct {
-	mu       sync.RWMutex
-	accounts map[string]*AccountSession
-	current  string
-	now      func() time.Time
+	mu              sync.RWMutex
+	accounts        map[string]*AccountSession
+	sessionVersions map[string]*atomic.Int64
+	current         string
+	now             func() time.Time
 }
 
 // NewAuthManager 创建 AuthManager。
 func NewAuthManager() *AuthManager {
 	return &AuthManager{
-		accounts: make(map[string]*AccountSession),
-		now:      time.Now,
+		accounts:        make(map[string]*AccountSession),
+		sessionVersions: make(map[string]*atomic.Int64),
+		now:             time.Now,
 	}
 }
 
@@ -53,9 +56,15 @@ func (m *AuthManager) AddAccount(accountID string, session AccountSession) error
 	if m.accounts == nil {
 		m.accounts = make(map[string]*AccountSession)
 	}
+	if m.sessionVersions == nil {
+		m.sessionVersions = make(map[string]*atomic.Int64)
+	}
 	cp := session
 	cp.AccountID = accountID
 	m.accounts[accountID] = &cp
+	if _, ok := m.sessionVersions[accountID]; !ok {
+		m.sessionVersions[accountID] = &atomic.Int64{}
+	}
 	if m.current == "" {
 		m.current = accountID
 	}
@@ -67,6 +76,9 @@ func (m *AuthManager) RemoveAccount(accountID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.accounts, accountID)
+	if m.sessionVersions != nil {
+		delete(m.sessionVersions, accountID)
+	}
 	if m.current == accountID {
 		m.current = ""
 	}
@@ -98,11 +110,11 @@ func (m *AuthManager) ListAccounts() []AccountSession {
 
 // GetAccount 返回指定账号（或当前账号）的有效 Session，必要时自动刷新。
 func (m *AuthManager) GetAccount(ctx context.Context, accountID string) (*Session, error) {
-	_, acc, err := m.resolveAccount(accountID)
+	accID, acc, err := m.resolveAccount(accountID)
 	if err != nil {
 		return nil, err
 	}
-	session, err := m.ensureSession(ctx, acc)
+	session, err := m.ensureSession(ctx, accID, acc)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +133,7 @@ func (m *AuthManager) RefreshAccount(ctx context.Context, accountID string) erro
 	if err := acc.Refresher.Refresh(ctx); err != nil {
 		return err
 	}
+	m.bumpSessionVersion(accID)
 	_, err = m.snapshot(accID)
 	return err
 }
@@ -134,7 +147,7 @@ func (m *AuthManager) SessionProvider(accountID string) (SessionProvider, error)
 	if acc.Store == nil {
 		return nil, ErrSessionStoreNil
 	}
-	return &storeProvider{manager: m, accountID: accID}, nil
+	return &storeProvider{manager: m, accountID: accID, cachedVersion: -1}, nil
 }
 
 func (m *AuthManager) resolveAccount(accountID string) (string, *AccountSession, error) {
@@ -154,7 +167,7 @@ func (m *AuthManager) resolveAccount(accountID string) (string, *AccountSession,
 	return id, acc, nil
 }
 
-func (m *AuthManager) ensureSession(ctx context.Context, acc *AccountSession) (*Session, error) {
+func (m *AuthManager) ensureSession(ctx context.Context, accountID string, acc *AccountSession) (*Session, error) {
 	if acc.Store == nil {
 		return nil, ErrSessionStoreNil
 	}
@@ -173,6 +186,7 @@ func (m *AuthManager) ensureSession(ctx context.Context, acc *AccountSession) (*
 		if err := acc.Refresher.Refresh(ctx); err != nil {
 			return nil, err
 		}
+		m.bumpSessionVersion(accountID)
 		session, err = loadSession(acc.Store)
 		if err != nil {
 			return nil, err
@@ -182,6 +196,41 @@ func (m *AuthManager) ensureSession(ctx context.Context, acc *AccountSession) (*
 		return nil, ErrSessionNotFound
 	}
 	return session, nil
+}
+
+func (m *AuthManager) getSessionVersion(accountID string) int64 {
+	if m == nil {
+		return 0
+	}
+	m.mu.RLock()
+	version := m.sessionVersions[accountID]
+	m.mu.RUnlock()
+	if version == nil {
+		return 0
+	}
+	return version.Load()
+}
+
+func (m *AuthManager) bumpSessionVersion(accountID string) int64 {
+	if m == nil {
+		return 0
+	}
+	m.mu.RLock()
+	version := m.sessionVersions[accountID]
+	m.mu.RUnlock()
+	if version == nil {
+		m.mu.Lock()
+		if m.sessionVersions == nil {
+			m.sessionVersions = make(map[string]*atomic.Int64)
+		}
+		version = m.sessionVersions[accountID]
+		if version == nil {
+			version = &atomic.Int64{}
+			m.sessionVersions[accountID] = version
+		}
+		m.mu.Unlock()
+	}
+	return version.Add(1)
 }
 
 func (m *AuthManager) snapshot(accountID string) (*Session, error) {
@@ -197,52 +246,67 @@ func (m *AuthManager) snapshot(accountID string) (*Session, error) {
 	return loadSession(acc.Store)
 }
 
-func (m *AuthManager) saveSnapshot(accountID string, session *Session) error {
+func (m *AuthManager) saveSnapshot(accountID string, session *Session) (int64, error) {
 	m.mu.RLock()
 	acc := m.accounts[accountID]
 	m.mu.RUnlock()
 	if acc == nil {
-		return ErrAccountNotFound
+		return 0, ErrAccountNotFound
 	}
 	if acc.Store == nil {
-		return ErrSessionStoreNil
+		return 0, ErrSessionStoreNil
 	}
-	return acc.Store.SaveSession(session)
+	if err := acc.Store.SaveSession(session); err != nil {
+		return 0, err
+	}
+	return m.bumpSessionVersion(accountID), nil
 }
 
 type storeProvider struct {
-	manager   *AuthManager
-	accountID string
-	cached    *Session     // 缓存的会话快照
-	once      sync.Once    // 确保只加载一次
-	cacheMu   sync.RWMutex // 缓存读写锁，保证并发安全
+	manager       *AuthManager
+	accountID     string
+	cached        *Session
+	cachedVersion int64
+	cacheMu       sync.RWMutex
 }
 
 func (p *storeProvider) session() *Session {
 	if p == nil {
 		return nil
 	}
-	p.once.Do(func() {
-		if p.manager != nil {
-			p.cacheMu.Lock()
-			p.cached, _ = p.manager.snapshot(p.accountID)
-			p.cacheMu.Unlock()
-		}
-	})
+	currentVersion := int64(0)
+	if p.manager != nil {
+		currentVersion = p.manager.getSessionVersion(p.accountID)
+	}
 	p.cacheMu.RLock()
-	defer p.cacheMu.RUnlock()
-	return p.cached
+	if p.cachedVersion == currentVersion {
+		cached := p.cached
+		p.cacheMu.RUnlock()
+		return cached
+	}
+	p.cacheMu.RUnlock()
+	if p.manager == nil {
+		return nil
+	}
+	cached, _ := p.manager.snapshot(p.accountID)
+	p.cacheMu.Lock()
+	p.cached = cached
+	p.cachedVersion = currentVersion
+	p.cacheMu.Unlock()
+	return cached
 }
 
 func (p *storeProvider) save(session *Session) error {
 	if p == nil || p.manager == nil {
 		return coreerrors.Wrap(coreerrors.ErrCodeInvalidConfig, "auth: 会话存储未初始化", ErrSessionStoreNil)
 	}
-	if err := p.manager.saveSnapshot(p.accountID, session); err != nil {
+	version, err := p.manager.saveSnapshot(p.accountID, session)
+	if err != nil {
 		return err
 	}
 	p.cacheMu.Lock()
 	p.cached = session
+	p.cachedVersion = version
 	p.cacheMu.Unlock()
 	return nil
 }

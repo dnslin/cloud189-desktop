@@ -19,6 +19,9 @@ import (
 // DefaultSliceSize 默认分片大小（10MB）。
 const DefaultSliceSize = 10 * 1024 * 1024
 
+// MaxSimpleUploadSize 一次性上传的最大大小（等于默认分片大小）。
+const MaxSimpleUploadSize = DefaultSliceSize // 10MB
+
 // UploadSession 记录上传上下文与已上传分片信息。
 type UploadSession struct {
 	UploadInitData
@@ -211,9 +214,18 @@ func (c *Client) simpleUploadInternal(
 	if data == nil {
 		return nil, WrapCloudError(ErrCodeInvalidRequest, "上传数据为空", errors.New("cloud189: 上传数据为空"))
 	}
-	buf, err := io.ReadAll(data)
+	// 限制读取大小，防止 OOM
+	limitedReader := io.LimitReader(data, MaxSimpleUploadSize+1)
+	buf, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, WrapCloudError(ErrCodeUnknown, "读取上传数据失败", err)
+	}
+	if int64(len(buf)) > MaxSimpleUploadSize {
+		return nil, WrapCloudError(
+			ErrCodeInvalidRequest,
+			fmt.Sprintf("文件大小超过一次性上传限制 %d 字节，请使用分片上传", MaxSimpleUploadSize),
+			errors.New("一次性上传大小超限"),
+		)
 	}
 	size := int64(len(buf))
 	session, err := initFn(ctx, parentID, filename, size)
