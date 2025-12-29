@@ -14,7 +14,7 @@
 
 示例：
 - `feat(core): add token refresh`
-- `feat(tui): add transfer panel`
+- `feat(gui): add transfer panel`
 - `fix(core): handle expired cookie`
 - `chore(ci): add golangci-lint`
 - `docs(adr): record transfer task model decision`
@@ -24,7 +24,7 @@
 ### 3.1 Core 三无原则
 
 `core/**` 必须做到：
-1) 无 UI 依赖（Bubble Tea / Wails / 前端库都不许）
+1) 无 UI 依赖（Wails / 前端库都不许）
 2) 无持久化副作用（不直接读写配置文件/数据库/注册表）
 3) 无输出副作用（不直接 `fmt.Println`，日志通过注入）
 
@@ -47,7 +47,7 @@
 上传/下载必须使用统一 Task 模型（详见 ADR 0003）。
 - 任务是异步的，返回 `TaskID`
 - UI 通过订阅进度事件展示进度/速度/ETA
-- 传输逻辑只写一次，禁止 TUI/GUI 各自实现
+- 传输逻辑只写一次，GUI 只调用 Core
 
 ## 5. 质量闸门（工具强制）
 

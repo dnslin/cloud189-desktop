@@ -6,9 +6,9 @@ Replies must be in Chinese and logs and comments must be output in Chinese.
 
 ## Project Overview
 
-天翼云盘桌面客户端（Linux + Windows），采用 monorepo 单 go.mod 结构。核心原则：**一个 Core，多种入口**。
+天翼云盘桌面客户端（Linux + Windows），采用 monorepo 单 go.mod 结构。核心原则：**一个 Core，GUI 入口**。
 
-当前状态：Core 业务库已完成，TUI/GUI 入口待开发。
+当前状态：Core 业务库已完成，GUI（Wails）入口待开发。
 
 ## Build & Test Commands
 
@@ -73,7 +73,7 @@ cloud189-example/   # 参考项目（只读不写）
 
 **Core 三无原则**（`core/**` 必须遵守）：
 
-1. 无 UI 依赖（bubbletea/wails/前端库均禁止）
+1. 无 UI 依赖（wails/前端库均禁止）
 2. 无持久化副作用（不直接读写文件/数据库）
 3. 无输出副作用（不直接 fmt.Println，日志通过 `httpclient.Logger` 接口注入）
 

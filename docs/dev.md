@@ -30,16 +30,7 @@ make lint
 ./scripts/check.sh
 ```
 
-## 3) TUI 开发
-
-建议先用一个最小 `cmd/cli`（可选）跑通：login + ls。随后再上 bubbletea。
-
-运行（示例）：
-```bash
-go run ./cmd/tui
-```
-
-## 4) GUI（Wails）开发
+## 3) GUI（Wails）开发
 
 进入目录：
 ```bash
@@ -63,7 +54,7 @@ wails build
 
 > 注意：本项目约定 GUI 的 backend 只做薄封装，所有业务走 `core/**`。
 
-## 5) 推荐：将配置/凭证存储实现为“可替换”
+## 4) 推荐：将配置/凭证存储实现为"可替换"
 
 - `TokenStore`：开发阶段可先落盘（本地），正式版再接 Keyring/DPAPI/Secret Service
 - `SecretStore`：尽量不用明文 JSON

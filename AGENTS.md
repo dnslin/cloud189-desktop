@@ -1,13 +1,13 @@
 # Repository Guidelines
 
-Cloud189 Desktop targets one Core with multiple entry points (TUI via Bubble Tea, GUI via Wails). Keep business logic centralized and side-effect free.
+Cloud189 Desktop targets one Core with GUI entry point (via Wails). Keep business logic centralized and side-effect free.
 Replies must be in Chinese and logs and comments must be output in Chinese.
 
 ## Project Structure & Module Organization
 
 - Root tools: `Makefile`, `Taskfile.yml`, `scripts/` (checks/setup), `docs/` (dev guide + ADRs), `CONTRIBUTING.md`.
 - `cloud189-example/` is an upstream CLI mirror; treat it as read-only.
-- Planned layout (see README): `core/**` (business only), `cmd/tui` (terminal UI), `cmd/cli` (debug), `app/backend` (thin Go wrapper), `app/frontend` (web UI). Flow dependencies into `core`, never the reverse.
+- Planned layout (see README): `core/**` (business only), `cmd/cli` (debug), `app/backend` (thin Go wrapper), `app/frontend` (web UI). Flow dependencies into `core`, never the reverse.
 - ADRs: `docs/adr/*.md` (e.g., 0002 no side effects, 0003 transfer task model).
 
 ## Build, Test, and Development Commands
@@ -15,7 +15,7 @@ Replies must be in Chinese and logs and comments must be output in Chinese.
 - `make check` (or `task check`): gofmt + vet + golangci-lint + go test + frontend lint/typecheck.
 - `make fmt | vet | lint | test`: run individual steps; `./scripts/check.sh` is an all-in-one variant that skips missing tools.
 - `./scripts/check_frontend.sh`: installs deps (pnpm/npm) and runs lint/typecheck when `app/frontend` exists.
-- Run TUI: `go run ./cmd/tui` (or `./cmd/cli`). GUI: `cd app && wails dev` / `wails build`.
+- Run CLI: `go run ./cmd/cli`. GUI: `cd app && wails dev` / `wails build`.
 
 ## Coding Style & Naming Conventions
 
@@ -32,7 +32,7 @@ Replies must be in Chinese and logs and comments must be output in Chinese.
 
 ## Commit & Pull Request Guidelines
 
-- Conventional Commits with scopes such as `core`, `tui`, `app`, `docs`, `ci`, `adr` (e.g., `feat(core): add token refresh`).
+- Conventional Commits with scopes such as `core`, `gui`, `app`, `docs`, `ci`, `adr` (e.g., `feat(core): add token refresh`).
 - Branches: `feat/*`, `fix/*`, `chore/*`; all changes land via PR with green CI.
 - Before a PR: ensure `make check` passes, link related issues/ADRs, state tests run, include screenshots for UI changes.
 

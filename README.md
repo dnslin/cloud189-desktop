@@ -1,11 +1,10 @@
 # Cloud189 Desktop (Monorepo) — 规范与骨架（草案）
 
-本仓库目标：**单机桌面云盘客户端（Linux + Windows）**，同时提供：
+本仓库目标：**单机桌面云盘客户端（Linux + Windows）**，提供：
 
-- **TUI**（Bubble Tea + Bubbles）
 - **GUI**（Wails：Go backend + Web frontend）
 
-核心原则：**一个 Core，多种入口**。Core 只实现一次业务能力；TUI/GUI 只是调用 Core。
+核心原则：**一个 Core，GUI 入口**。Core 只实现一次业务能力；GUI 只是调用 Core。
 
 ## 目录结构（建议）
 
@@ -18,7 +17,6 @@
 │   ├── model/             # 领域模型（File/Task/...）
 │   └── store/             # Token/Config/Secret 存储接口定义（实现放上层）
 ├── cmd/
-│   ├── tui/               # bubbletea 终端入口
 │   └── cli/               # (可选) 最小调试入口（开发排障用）
 ├── app/                   # wails 工程
 │   ├── backend/           # Go backend：仅薄封装 core
@@ -33,7 +31,7 @@
 ## 依赖方向（强制）
 
 - `core/**` **禁止**引用：`cmd/**`、`app/**`、任何 UI 框架、任何直接持久化/打印。
-- `cmd/tui`、`app/backend` 只能依赖 `core/**`。
+- `app/backend` 只能依赖 `core/**`。
 - 业务逻辑不得在 UI 层重复实现。
 
 ## 快速开始
