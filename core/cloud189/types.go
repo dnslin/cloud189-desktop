@@ -39,6 +39,7 @@ type UserInfo struct {
 	CodeResponse
 	UserID      string `json:"userId,omitempty"`
 	UserName    string `json:"userName,omitempty"`
+	LoginName   string `json:"loginName,omitempty"` // 用户登录名
 	NickName    string `json:"nickName,omitempty"`
 	FamilyID    string `json:"familyId,omitempty"`
 	SessionKey  string `json:"sessionKey,omitempty"`
@@ -220,10 +221,11 @@ func (f FileInfo) ToModel() model.File {
 // ToModel 将用户信息转换为领域模型。
 func (u UserInfo) ToModel() model.User {
 	return model.User{
-		ID:       u.UserID,
-		Name:     u.UserName,
-		NickName: u.NickName,
-		FamilyID: u.FamilyID,
+		ID:        u.UserID,
+		Name:      u.UserName,
+		LoginName: u.LoginName,
+		NickName:  u.NickName,
+		FamilyID:  u.FamilyID,
 		Quota: model.StorageQuota{
 			Capacity:  u.Capacity,
 			Available: u.Available,
