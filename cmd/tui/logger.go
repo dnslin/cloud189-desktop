@@ -13,7 +13,7 @@ type TUILogger struct {
 // NewTUILogger 返回默认的终端日志记录器。
 func NewTUILogger() *TUILogger {
 	return &TUILogger{
-		logger: log.New(os.Stdout, "", log.LstdFlags),
+		logger: log.New(os.Stderr, "", log.LstdFlags),
 	}
 }
 

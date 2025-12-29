@@ -95,6 +95,17 @@ func (s *JSONSessionStore) SaveSession(session *auth.Session) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("替换会话文件失败: %w", err)
 	}
+	dir, err := os.Open(filepath.Dir(s.filePath))
+	if err != nil {
+		return fmt.Errorf("打开会话目录失败: %w", err)
+	}
+	if err := dir.Sync(); err != nil {
+		_ = dir.Close()
+		return fmt.Errorf("同步会话目录失败: %w", err)
+	}
+	if err := dir.Close(); err != nil {
+		return fmt.Errorf("关闭会话目录失败: %w", err)
+	}
 	if err := os.Chmod(s.filePath, defaultSessionPerm); err != nil {
 		return fmt.Errorf("设置会话文件权限失败: %w", err)
 	}

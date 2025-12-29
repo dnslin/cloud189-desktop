@@ -26,17 +26,22 @@ type Model struct {
 	authService *service.AuthService
 	userInfo    *model.User // 用户信息
 	userInfoErr error       // 用户信息获取错误
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 func NewApp(authService *service.AuthService) Model {
+	ctx, cancel := context.WithCancel(context.Background())
 	submit := func(username, password string) tea.Cmd {
-		return loginCmd(authService, username, password)
+		return submitLoginCmd(username, password)
 	}
 
 	return Model{
 		state:       StateLogin,
 		loginModel:  login.NewModel(submit),
 		authService: authService,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -52,22 +57,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
+			m.cancelRequest()
 			return m, tea.Quit
 		case "r":
 			if m.state == StateBrowser {
-				return m, m.fetchUserInfoCmd()
+				return m.startFetchUserInfo()
 			}
 		}
+	case LoginSubmittedMsg:
+		return m.startLogin(msg.Username, msg.Password)
 	case LoginSuccessMsg:
 		m.loginModel = m.loginModel.SetSubmitting(false)
 		m.state = StateBrowser
 		m.userInfo = nil
 		m.userInfoErr = nil
 		// 登录成功后获取用户信息
-		return m, m.fetchUserInfoCmd()
+		return m.startFetchUserInfo()
 	case UserInfoMsg:
 		if msg.Err != nil {
 			m.userInfoErr = msg.Err
+			m.userInfo = nil
 			return m, nil
 		}
 		m.userInfoErr = nil
@@ -155,7 +164,7 @@ func (m Model) fetchUserInfoCmd() tea.Cmd {
 		if m.authService == nil {
 			return UserInfoMsg{Err: errors.New("认证服务未初始化")}
 		}
-		user, err := m.authService.GetUserInfo(context.Background())
+		user, err := m.authService.GetUserInfo(m.ctx)
 		return UserInfoMsg{User: user, Err: err}
 	}
 }
@@ -181,15 +190,47 @@ func formatSize(bytes uint64) string {
 	}
 }
 
-func loginCmd(authService *service.AuthService, username, password string) tea.Cmd {
+func (m Model) loginCmd(username, password string) tea.Cmd {
 	return func() tea.Msg {
-		if authService == nil {
+		if m.authService == nil {
 			return LoginErrorMsg{Err: errors.New("认证服务未初始化")}
 		}
-		session, err := authService.Login(context.Background(), username, password)
+		session, err := m.authService.Login(m.ctx, username, password)
 		if err != nil {
 			return LoginErrorMsg{Err: err}
 		}
 		return LoginSuccessMsg{Session: session, Username: username}
+	}
+}
+
+func submitLoginCmd(username, password string) tea.Cmd {
+	return func() tea.Msg {
+		return LoginSubmittedMsg{Username: username, Password: password}
+	}
+}
+
+func (m Model) startLogin(username, password string) (Model, tea.Cmd) {
+	m = m.resetRequestContext()
+	return m, m.loginCmd(username, password)
+}
+
+func (m Model) startFetchUserInfo() (Model, tea.Cmd) {
+	m = m.resetRequestContext()
+	return m, m.fetchUserInfoCmd()
+}
+
+func (m Model) resetRequestContext() Model {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.ctx = ctx
+	m.cancel = cancel
+	return m
+}
+
+func (m Model) cancelRequest() {
+	if m.cancel != nil {
+		m.cancel()
 	}
 }

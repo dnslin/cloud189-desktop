@@ -81,8 +81,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.errMsg = ""
 			if m.submit != nil {
+				cmd := m.submit(m.usernameInput.Value(), m.passwordInput.Value())
+				if cmd == nil {
+					m.isSubmitting = false
+					return m, nil
+				}
 				m.isSubmitting = true
-				return m, m.submit(m.usernameInput.Value(), m.passwordInput.Value())
+				return m, cmd
 			}
 			return m, nil
 		case "esc":
