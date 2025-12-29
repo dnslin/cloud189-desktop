@@ -848,33 +848,43 @@ func main() {
 
 ## 八、分阶段实现计划
 
-### 阶段 1：基础框架与登录
+### 阶段 1：基础框架与登录 ✅ 已完成
 
 **目标**：完成项目骨架和登录流程
 
 **任务清单**：
-1. 创建 `cmd/tui/main.go` - 入口和依赖初始化
-2. 实现 `cmd/tui/store/session.go` - JSONSessionStore
-3. 实现 `cmd/tui/logger.go` - httpclient.Logger
-4. 实现 `cmd/tui/service/auth.go` - AuthService
-5. 实现 `cmd/tui/ui/login/login.go` - 登录表单（textinput 组件）
-6. 实现 `cmd/tui/app.go` - 根 Model 状态切换
-7. 实现 `cmd/tui/messages.go` - 消息类型定义
+1. ✅ 创建 `cmd/tui/main.go` - 入口和依赖初始化
+2. ✅ 实现 `cmd/tui/store/session.go` - JSONSessionStore（含原子写入、权限收紧、目录fsync）
+3. ✅ 实现 `cmd/tui/logger.go` - httpclient.Logger（输出到 stderr）
+4. ✅ 实现 `cmd/tui/service/auth.go` - AuthService（含 GetUserInfo）
+5. ✅ 实现 `cmd/tui/ui/login/login.go` - 登录表单（含 in-flight 防护）
+6. ✅ 实现 `cmd/tui/app.go` - 根 Model 状态切换（含 context 取消、用户信息错误处理）
+7. ✅ 实现 `cmd/tui/messages.go` - 消息类型定义
+8. ✅ 实现 `cmd/tui/ui/common/styles.go` - Lip Gloss 样式定义
 
-**验收标准**：能够输入账号密码登录成功，切换到浏览器视图
+**验收标准**：能够输入账号密码登录成功，切换到浏览器视图 ✅
 
-### 阶段 2：文件浏览器
+**代码审查优化**（2024-12-29）：
+- P0: 会话文件原子写入（临时文件 + fsync + rename）
+- P0: 会话文件权限收紧（0600）
+- P1: 登录 in-flight 防护（防止重复提交）
+- P1: 用户信息获取失败处理（显示错误 + 重试）
+- 中: context 可取消（退出时取消请求）
+- 中: 日志输出改为 stderr
+- 中: 目录 fsync 确保原子写入完整
+
+### 阶段 2：文件浏览器 🚧 进行中
 
 **目标**：完成双栏文件浏览
 
 **任务清单**：
-1. 实现 `cmd/tui/service/file.go` - FileService（封装 ListFiles/GetFileInfo）
-2. 实现 `cmd/tui/ui/browser/filelist.go` - 文件列表（list 组件）
-3. 实现 `cmd/tui/ui/browser/detail.go` - 详情面板
-4. 实现 `cmd/tui/ui/browser/browser.go` - 双栏布局
-5. 实现 `cmd/tui/ui/common/styles.go` - 样式定义
-6. 实现目录导航（进入/返回上级）
-7. 实现刷新功能
+1. ⬜ 实现 `cmd/tui/service/file.go` - FileService（封装 ListFiles/GetFileInfo）
+2. ⬜ 实现 `cmd/tui/ui/browser/filelist.go` - 文件列表（list 组件）
+3. ⬜ 实现 `cmd/tui/ui/browser/detail.go` - 详情面板
+4. ⬜ 实现 `cmd/tui/ui/browser/browser.go` - 双栏布局
+5. ✅ 实现 `cmd/tui/ui/common/styles.go` - 样式定义（阶段1已完成基础样式）
+6. ⬜ 实现目录导航（进入/返回上级）
+7. ⬜ 实现刷新功能
 
 **验收标准**：能够浏览目录、查看文件详情、导航
 
@@ -975,3 +985,42 @@ func main() {
 3. **遵循规范**：CONTRIBUTING.md 中的代码边界和提交规范
 4. **错误处理**：使用 core/errors 的结构化错误，UI 负责展示
 5. **日志输出**：通过 httpclient.Logger 接口注入，不直接 fmt.Println
+
+---
+
+## 十二、开发进度跟踪
+
+### 当前状态
+
+| 阶段 | 状态 | 完成日期 |
+|------|------|----------|
+| 阶段 1：基础框架与登录 | ✅ 已完成 | 2024-12-29 |
+| 阶段 2：文件浏览器 | 🚧 进行中 | - |
+| 阶段 3：文件操作 | ⬜ 待开始 | - |
+| 阶段 4：传输任务 | ⬜ 待开始 | - |
+| 阶段 5：多账号与完善 | ⬜ 待开始 | - |
+
+### 已实现文件清单
+
+```
+cmd/tui/
+├── main.go                    ✅ 入口，初始化依赖并启动 TUI
+├── app.go                     ✅ 根 Model，状态切换，context 管理
+├── messages.go                ✅ 自定义消息类型定义
+├── logger.go                  ✅ httpclient.Logger 实现（stderr）
+├── store/
+│   └── session.go             ✅ JSONSessionStore（原子写入）
+├── service/
+│   └── auth.go                ✅ AuthService（登录/会话/用户信息）
+└── ui/
+    ├── login/
+    │   └── login.go           ✅ 登录表单（in-flight 防护）
+    └── common/
+        └── styles.go          ✅ Lip Gloss 样式定义
+```
+
+### 下一步任务
+
+1. 实现 `cmd/tui/service/file.go` - FileService
+2. 实现 `cmd/tui/ui/browser/` - 文件浏览器组件
+3. 集成文件列表到主界面
